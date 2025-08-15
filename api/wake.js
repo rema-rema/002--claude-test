@@ -1,5 +1,6 @@
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  // Allow GET requests with wake=true parameter
+  if (req.method !== 'POST' && !(req.method === 'GET' && req.query.wake === 'true')) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
