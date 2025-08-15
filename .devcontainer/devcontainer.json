@@ -4,8 +4,8 @@
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "postCreateCommand": "npm install",
-  "postStartCommand": "npm start &",
+  "postCreateCommand": "npm install && echo 'npm start &' >> ~/.bashrc",
+  "postStartCommand": "nohup npm start > discord-bot.log 2>&1 & echo $! > bot.pid",
   "forwardPorts": [],
   "customizations": {
     "vscode": {
