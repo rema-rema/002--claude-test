@@ -6,9 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node discord-bot/src/index.js",
-    "start:claude-code": "node discord-bot/src/index-claude-code.js",
-    "dev": "node --watch discord-bot/src/index.js",
-    "dev:claude-code": "node --watch discord-bot/src/index-claude-code.js"
+    "dev": "node --watch discord-bot/src/index.js"
   },
   "keywords": [
     "discord",
