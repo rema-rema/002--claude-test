@@ -5,36 +5,41 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('Raw body:', req.body, 'Type:', typeof req.body);
+    console.log('Method:', req.method, 'Query:', req.query, 'Raw body:', req.body, 'Type:', typeof req.body);
     
     let content;
-    if (!req.body) {
+    
+    // Handle GET request with wake=true
+    if (req.method === 'GET' && req.query.wake === 'true') {
+      content = '!wake';
+    }
+    // Handle POST requests
+    else if (!req.body) {
       return res.status(400).json({ error: 'No body provided' });
     }
     
-    // Handle Discord Bot request
-    if (typeof req.body === 'object' && req.body.content) {
-      content = req.body.content;
-    }
-    // Handle Discord Webhook request
-    else if (typeof req.body === 'object' && req.body.content && req.body.content.includes('!wake')) {
-      content = req.body.content;
-    }
-    // Handle string requests
-    else if (typeof req.body === 'string') {
-      try {
-        const parsed = JSON.parse(req.body);
-        content = parsed.content;
-      } catch (parseError) {
-        return res.status(400).json({ error: 'Invalid JSON format', details: parseError.message });
-      }
-    }
-    // Handle direct wake requests (for testing)
-    else if (req.query.wake === 'true') {
-      content = '!wake';
-    }
+    // Handle POST requests
     else {
-      return res.status(400).json({ error: 'Invalid request format' });
+      // Handle Discord Bot request
+      if (typeof req.body === 'object' && req.body.content) {
+        content = req.body.content;
+      }
+      // Handle Discord Webhook request
+      else if (typeof req.body === 'object' && req.body.content && req.body.content.includes('!wake')) {
+        content = req.body.content;
+      }
+      // Handle string requests
+      else if (typeof req.body === 'string') {
+        try {
+          const parsed = JSON.parse(req.body);
+          content = parsed.content;
+        } catch (parseError) {
+          return res.status(400).json({ error: 'Invalid JSON format', details: parseError.message });
+        }
+      }
+      else {
+        return res.status(400).json({ error: 'Invalid request format' });
+      }
     }
     
     if (!content || !content.includes('!wake')) {
