@@ -42,20 +42,16 @@ class DiscordClaudeInterface {
         return;
       }
       
-      if (message.content.startsWith('!wake')) {
-        // Handled by DiscordBot directly
-        return;
-      }
-      
       if (message.content.startsWith('!help')) {
         const helpMessage = `
 **Discord Claude Interface コマンド:**
 • \`!clear\` - 会話履歴をクリア
 • \`!history\` - 会話履歴の長さを表示
-• \`!wake\` - Codespace を起動
 • \`!help\` - このヘルプを表示
 
 その他のメッセージはClaudeに送信されます。
+
+**Codespace起動**: ブラウザで https://002-claude-test.vercel.app/api/wake?wake=true
         `;
         await this.discordBot.sendMessage(helpMessage);
         return;
