@@ -34,6 +34,12 @@ export class DiscordBot {
     if (message.author.id !== this.targetUserId) return;
     if (message.channel.id !== this.targetChannelId && message.channel.parentId !== this.targetChannelId) return;
 
+    // Handle !wake command
+    if (message.content.trim() === '!wake') {
+      await this.handleWakeCommand(message);
+      return;
+    }
+
     if (!this.currentThread) {
       await this.createThread(message);
     }
@@ -110,6 +116,36 @@ export class DiscordBot {
     }
     
     return chunks;
+  }
+
+  async handleWakeCommand(message) {
+    try {
+      await message.react('⏰');
+      
+      const response = await fetch('https://002-claude-test.vercel.app/api/wake', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: '!wake'
+        })
+      });
+
+      const result = await response.json();
+      
+      if (response.ok) {
+        await message.reply(`✅ ${result.message}`);
+        if (result.codespace_url) {
+          await message.reply(`🔗 Codespace URL: ${result.codespace_url}`);
+        }
+      } else {
+        await message.reply(`❌ Error: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Wake command error:', error);
+      await message.reply('❌ Failed to wake up Codespace. Please try again later.');
+    }
   }
 
   async stop() {
