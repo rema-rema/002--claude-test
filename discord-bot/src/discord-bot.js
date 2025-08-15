@@ -148,7 +148,8 @@ export class DiscordBot {
           await message.reply(`🔗 Codespace URL: ${result.codespace_url}`);
         }
       } else {
-        await message.reply(`❌ Error: ${result.error}`);
+        await message.reply(`❌ Error: ${result.error || 'Unknown error'}`);
+        await message.reply(`Debug: Status ${response.status}, Details: ${JSON.stringify(result)}`);
       }
     } catch (error) {
       console.error('Wake command error:', error);
