@@ -53,6 +53,18 @@ export default async function handler(req, res) {
     const codespaces = await response.json();
     console.log('Codespaces response:', JSON.stringify(codespaces, null, 2));
     
+    // Temporary debug - return the full response to see what we get
+    return res.status(200).json({
+      debug: 'GitHub API Response',
+      data: codespaces,
+      env_vars: {
+        username: githubUsername,
+        repo: repoName,
+        token_exists: !!githubToken,
+        token_length: githubToken ? githubToken.length : 0
+      }
+    });
+    
     const targetCodespace = codespaces.codespaces?.[0];
 
     if (!targetCodespace) {
