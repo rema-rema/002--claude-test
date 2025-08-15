@@ -1,0 +1,28 @@
+{
+  "name": "discord-claude-code-interface",
+  "version": "1.0.0",
+  "description": "Discord integration for Claude Code",
+  "main": "discord-bot/src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node discord-bot/src/index.js",
+    "start:claude-code": "node discord-bot/src/index-claude-code.js",
+    "dev": "node --watch discord-bot/src/index.js",
+    "dev:claude-code": "node --watch discord-bot/src/index-claude-code.js"
+  },
+  "keywords": [
+    "discord",
+    "claude-code",
+    "bot",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.60.0",
+    "child_process": "^1.0.2",
+    "discord.js": "^14.21.0",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0"
+  }
+}
