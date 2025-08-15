@@ -4,14 +4,25 @@ export default async function handler(req, res) {
   }
 
   try {
-    let body;
-    try {
-      body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    } catch (parseError) {
-      return res.status(400).json({ error: 'Invalid JSON format' });
+    console.log('Raw body:', req.body, 'Type:', typeof req.body);
+    
+    let content;
+    if (!req.body) {
+      return res.status(400).json({ error: 'No body provided' });
     }
     
-    const { content } = body;
+    if (typeof req.body === 'object' && req.body.content) {
+      content = req.body.content;
+    } else if (typeof req.body === 'string') {
+      try {
+        const parsed = JSON.parse(req.body);
+        content = parsed.content;
+      } catch (parseError) {
+        return res.status(400).json({ error: 'Invalid JSON format', details: parseError.message });
+      }
+    } else {
+      return res.status(400).json({ error: 'Invalid request format' });
+    }
     
     if (!content || !content.includes('!wake')) {
       return res.status(200).json({ message: 'Not a wake command' });

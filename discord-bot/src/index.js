@@ -43,7 +43,7 @@ class DiscordClaudeInterface {
       }
       
       if (message.content.startsWith('!wake')) {
-        // Let the bot handle the wake command directly
+        // Handled by DiscordBot directly
         return;
       }
       

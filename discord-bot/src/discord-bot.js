@@ -30,9 +30,17 @@ export class DiscordBot {
   }
 
   async handleMessage(message) {
+    console.log(`Message received: ${message.content} from ${message.author.id} in ${message.channel.id}`);
+    
     if (message.author.bot) return;
-    if (message.author.id !== this.targetUserId) return;
-    if (message.channel.id !== this.targetChannelId && message.channel.parentId !== this.targetChannelId) return;
+    if (message.author.id !== this.targetUserId) {
+      console.log(`User ID mismatch: ${message.author.id} !== ${this.targetUserId}`);
+      return;
+    }
+    if (message.channel.id !== this.targetChannelId && message.channel.parentId !== this.targetChannelId) {
+      console.log(`Channel ID mismatch: ${message.channel.id} !== ${this.targetChannelId}`);
+      return;
+    }
 
     // Handle !wake command
     if (message.content.trim() === '!wake') {

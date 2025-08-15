@@ -17,7 +17,7 @@ export class ClaudeService {
       });
 
       const response = await this.anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20250106',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 4000,
         messages: this.conversationHistory.slice(-10), // Keep last 10 messages for context
         system: `あなたはDiscord経由でClaude Codeを使用しているユーザーとやり取りしています。
