@@ -46,14 +46,20 @@ export default async function handler(req, res) {
     });
 
     if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
     }
 
     const codespaces = await response.json();
+    console.log('Codespaces response:', JSON.stringify(codespaces, null, 2));
+    
     const targetCodespace = codespaces.codespaces?.[0];
 
     if (!targetCodespace) {
-      return res.status(404).json({ error: 'No codespaces found' });
+      return res.status(404).json({ 
+        error: 'No codespaces found',
+        debug: `Found ${codespaces.codespaces?.length || 0} codespaces`
+      });
     }
 
     if (targetCodespace.state === 'Running') {
