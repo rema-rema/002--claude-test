@@ -39,7 +39,23 @@ ANTHROPIC_API_KEY=your-anthropic-api-key
 npm install
 ```
 
-### 5. 起動
+### 5. Serena MCP セットアップ (Claude Code用)
+
+Claude Codeでより高度なコード支援を受けるために、Serena MCPを設定します：
+
+```bash
+# uvパッケージマネージャーのインストール
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Serena MCPをプロジェクトに追加
+claude mcp add serena -s project -- uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context ide-assistant --project $(pwd)
+
+# Claude Codeを再起動後、以下のコマンドでオンボーディング実行
+# /mcp__serena__check_onboarding_performed
+# /mcp__serena__onboarding
+```
+
+### 6. 起動
 
 ```bash
 npm start
