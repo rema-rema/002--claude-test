@@ -13,6 +13,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 #### 現在のモード: MAINTENANCE
 
+### 実装状況ステータス定義
+
+#### ファイル・機能のステータス
+- **`[参考テンプレート]`**: 前のプロジェクトの参考ファイル（未実装・上書き予定）
+- **`[設計中]`**: 現在設計・作成中のファイル
+- **`[設計完了]`**: 設計完了・確認待ちの状態
+- **`[実装中]`**: 実装作業進行中
+- **`[実装完了]`**: 実装・テスト完了済み
+- **`[未作成]`**: ファイルが存在しない状態
+- **`[要修正]`**: バグ・改修が必要な状態
+
 #### 0. MAINTENANCE モード（メンテナンス）
 **目的**: CLAUDE.mdの修正・全体管理作業  
 **実行内容**: 
@@ -31,14 +42,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 #### 2. DESIGN モード（設計）
 **成果物**: 
-- `spec/01_architecture_design.md` [実装完了済み]
-- `spec/02_database_design.md` [実装完了済み] 
-- `spec/03_api_design.md` [実装完了済み]
-- `spec/04_screen_transition_design.md` [実装完了済み]
+- `spec/01_architecture_design.md` [参考テンプレート]
+- `spec/02_database_design.md` [参考テンプレート] 
+- `spec/03_api_design.md` [参考テンプレート]
+- `spec/04_screen_transition_design.md` [参考テンプレート]
 - `spec/05_ui_ux_design.md` （未作成）
-- `spec/06_error_handling_design.md` [実装完了済み]
-- `spec/07_type_definitions.md` [実装完了済み]
-- `spec/08_development_setup.md` [実装完了済み]
+- `spec/06_error_handling_design.md` [参考テンプレート]
+- `spec/07_type_definitions.md` [参考テンプレート]
+- `spec/08_development_setup.md` [参考テンプレート]
 - `spec/09_operation_design.md` （未作成）
 
 **完了条件**: 設計書01～09の確認依頼 → 確認完了連絡まで次モードに進まない  
@@ -54,7 +65,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 継続開発・保守ルール
 - **追加機能・バグ修正**: 既存設計書に追加セクションとして記載
 - **履歴管理**: 全specファイルに履歴管理セクションを追加
-- **実装状況管理**: `[実装完了済み]`、`[実装中]`、`[未実装]`タグで管理
+- **実装状況管理**: 上記ステータスタグで管理
+- **テンプレート活用**: `[参考テンプレート]`を参考に新規設計・全上書き
 - **ルール変更**: 事前確認・すり合わせ後に変更実施
 
 ## Project Overview
