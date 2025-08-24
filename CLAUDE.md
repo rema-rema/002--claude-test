@@ -89,6 +89,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Thread-Based Conversations**: Each user interaction creates a Discord thread for organized conversations
 - **Stateful History Management**: ClaudeService maintains conversation context with automatic cleanup
 
+## Git ブランチ戦略
+
+### ブランチ構成
+- **`main`**: 本番環境（リリース済みコード）
+- **`develop`**: ステージング環境（開発統合ブランチ）
+- **`feature/*`**: 開発環境（機能開発ブランチ）
+
+### 開発フロー
+1. **機能開発**: `develop` から `feature/機能名` を作成
+2. **ステージング**: `feature/*` → `develop` (PR経由で統合・検証)
+3. **本番リリース**: `develop` → `main` (PR経由でリリース)
+
+### ブランチ運用ルール
+- **feature開発**: 個別機能ごとに `feature/機能名` で開発
+- **PR必須**: 直接pushは禁止、必ずPull Requestで統合
+- **検証段階**: develop で統合テスト・ステージング検証
+- **本番デプロイ**: main への統合でリリース実行
+
 ## Development Commands
 
 ### Core Commands
@@ -101,6 +119,20 @@ npm start
 
 # Start development mode with file watching
 npm run dev
+```
+
+### Git Commands
+```bash
+# 機能開発開始
+git checkout develop
+git pull origin develop
+git checkout -b feature/新機能名
+
+# 開発完了後
+git push -u origin feature/新機能名
+# GitHub でdevelopへのPR作成
+
+# ステージング確認後、main へのPR作成
 ```
 
 ### Discord Bot Commands
