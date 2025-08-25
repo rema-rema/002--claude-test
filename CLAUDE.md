@@ -69,6 +69,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **テンプレート活用**: `[参考テンプレート]`を参考に新規設計・全上書き
 - **ルール変更**: 事前確認・すり合わせ後に変更実施
 
+### Kairo機能別開発ルール（厳守）
+
+#### 階層管理方式
+**spec/**: 全体設計（プロジェクト俯瞰）
+**spec/kairo/**: 機能別詳細設計（小さく切り出し）
+
+#### フォルダ構成
+```
+spec/
+├── requirements.md              # プロジェクト全体要件（高レベル）
+├── 01-09_*.md                  # 全体設計書（プロジェクト俯瞰）
+├── kairo/                      # 機能別詳細要件
+│   ├── [機能名]/               # 各機能フォルダ
+│   │   ├── requirements.md     # 機能別要件定義
+│   │   ├── design.md          # 機能別設計詳細
+│   │   └── tasks.md           # 機能別実装タスク
+│   └── [他機能]/
+└── integration.md              # kairo成果物の統合管理
+```
+
+#### 設計書の粒度・範囲
+**spec/01-09設計書**: 全プロジェクトのアーキテクチャ・設計（例：「Discord Bot + Claude Service + Playwright + Web API」全体）
+**kairo/[機能]/design.md**: 特定機能に絞った詳細設計（例：「Playwrightレポーター → Discord通知」のみ）
+
+#### 運用ルール（現在：C案で運用中）
+**実験的機能開発**: Kairo独立開発
+**本格システム開発**: 通常モード（REQUIREMENTS → DESIGN → TASK → IMPLEMENTATION）
+
+1. **spec/requirements.md**: 全体像のみ記載（What we build）
+2. **spec/kairo/[機能]/**: 詳細要件記載（How we build it）  
+3. **spec/integration.md**: 各kairo成果物の統合状況管理
+4. **Kairo完了時**: spec/integration.mdに統合状況を記録
+5. **巨大化防止**: spec/requirements.mdは高レベル概要のみ維持
+
+**注意**: A案（Kairo統合開発プラン）は `kairo-integration-plan.md` に保留中。Tsumiki稼働確認後に検討予定。
+
 ## Project Overview
 
 このプロジェクトは開発フレームワーク構築の段階です。具体的なプロジェクト内容については `spec/requirements.md` を参照してください。
@@ -171,6 +207,33 @@ Copy `.env.example` to `.env` and configure:
 
 ## MCP Integration
 
+### 現在利用中のMCP一覧
+- **serena** - コード解析・編集支援ツール
+- **tsumiki** - AI支援型TDD (テスト駆動開発) フレームワーク
+- **playwright** - ブラウザ自動化・E2Eテスト実行ツール（ヘッドレス対応）
+
+### MCP管理ルール（厳守）
+
+#### MCP追加時の必須手順
+1. `.mcp.json`にMCP設定を追加
+2. **必ず**上記「現在利用中のMCP一覧」に追加したMCPを記載
+3. 追加理由・用途を一覧に併記
+
+#### MCP削除時の必須手順
+1. `.mcp.json`からMCP設定を削除
+2. **必ず**上記「現在利用中のMCP一覧」から削除したMCPを除去
+3. 関連設定・依存関係のクリーンアップ確認
+
+#### MCP修正時の必須手順
+1. `.mcp.json`のMCP設定を修正
+2. **必ず**上記「現在利用中のMCP一覧」の説明・用途を更新
+3. 変更内容の影響範囲を確認・記録
+
+**重要**: MCPの追加・削除・修正を行った際は、このCLAUDE.mdの一覧更新を**絶対に忘れてはならない**。この一覧がプロジェクトの現状把握と運営判断の基準となる。
+
+### MCP設定詳細
+
+#### Serena MCP
 This project uses Serena MCP for enhanced code assistance:
 
 ```bash
@@ -181,6 +244,50 @@ claude mcp add serena -s project -- uvx --from git+https://github.com/oraios/ser
 After restart, run onboarding:
 - `/mcp__serena__check_onboarding_performed`
 - `/mcp__serena__onboarding` (if needed)
+
+#### Tsumiki Framework
+AI支援型テスト駆動開発フレームワーク（Claude Codeスラッシュコマンドとして実装）:
+
+```bash
+# Tsumikiインストール
+npx tsumiki install
+```
+
+利用可能なコマンド:
+- `/kairo-requirements` - 要件定義
+- `/kairo-design` - 設計フェーズ
+- `/kairo-tasks` - タスク分解
+- `/kairo-implement` - 実装
+- `/tdd-requirements` - TDD要件定義
+- `/tdd-testcases` - テストケース作成
+- `/tdd-red` - Red phase (failing test)
+- `/tdd-green` - Green phase (passing implementation)
+- `/tdd-refactor` - リファクタリング
+
+#### Playwright MCP
+ブラウザ自動化・E2Eテスト実行ツール（GitHub Codespacesヘッドレス対応）:
+
+```bash
+# Playwright MCPインストール
+claude mcp add-json playwright '{"name":"playwright","command":"npx","args":["@playwright/mcp@latest"]}'
+
+# Chromeブラウザインストール
+npx playwright install chrome
+```
+
+**GitHub Codespacesでの使用方法:**
+```bash
+# ヘッドレスモードでテスト実行（推奨）
+npx playwright test --headless
+
+# 録画付きテスト実行
+npx playwright test --video=on
+
+# 失敗時スクリーンショット
+npx playwright test --screenshot=only-on-failure
+```
+
+**重要**: GitHub Codespacesでは画面表示できないため、ヘッドレスモードでの実行が必須。テスト結果は録画・スクリーンショット機能で確認可能。
 
 ## Testing and Debugging
 

@@ -14,6 +14,13 @@
         "/workspaces/002--claude-test"
       ],
       "env": {}
+    },
+    "playwright": {
+      "name": "playwright",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ]
     }
   }
 }
