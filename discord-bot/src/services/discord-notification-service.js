@@ -3,11 +3,22 @@ import { config } from '../config.js';
 import fs from 'fs/promises';
 import path from 'path';
 
+// Track B統合コンポーネント
+import { RetryHandler, defaultRetryHandler } from '../components/RetryHandler.js';
+import { ErrorClassifier, defaultErrorClassifier } from '../components/ErrorClassifier.js';
+import { ThreadManager } from '../components/ThreadManager.js';
+
 export class DiscordNotificationService {
-  constructor() {
+  constructor(options = {}) {
     this.client = null;
     this.targetChannel = null;
+    this.mainChannel = null;
     this.maxFileSize = 25 * 1024 * 1024; // 25MB制限
+    
+    // Track B統合コンポーネント
+    this.retryHandler = options.retryHandler || defaultRetryHandler;
+    this.errorClassifier = options.errorClassifier || defaultErrorClassifier;
+    this.threadManager = options.threadManager || null;
   }
 
   async initialize() {
@@ -50,6 +61,9 @@ export class DiscordNotificationService {
 
       console.log(`テスト結果チャンネル設定完了: ${this.targetChannel.name}`);
 
+      // 承認チャンネル初期化
+      await this.initializeApprovalChannels();
+
     } catch (error) {
       console.error('Discord通知サービス初期化エラー:', error.message);
       throw error;
@@ -78,6 +92,92 @@ export class DiscordNotificationService {
       // リソース解放
       await this.cleanup();
     }
+  }
+
+  async sendTestFailureWithApproval(approvalRequest) {
+    return await this.retryHandler.retry(async () => {
+      // 1. エラー分類
+      const classification = this.errorClassifier.classify(approvalRequest.error);
+      
+      // 2. スレッド作成
+      const thread = await this.threadManager.createApprovalThread(approvalRequest);
+      
+      // 3. 承認依頼メッセージ送信
+      const message = await this.formatApprovalMessage(approvalRequest, classification);
+      return await thread.send(message);
+    });
+  }
+
+  async initializeApprovalChannels() {
+    try {
+      if (!this.client) {
+        await this.initialize();
+      }
+
+      // RESULT vs MAIN チャンネル分離設定
+      if (config.discord.mainChannelId) {
+        this.mainChannel = await this.client.channels.fetch(config.discord.mainChannelId);
+        
+        if (!this.mainChannel) {
+          throw new Error(`メインチャンネル(${config.discord.mainChannelId})が見つかりません`);
+        }
+        
+        console.log(`メインチャンネル設定完了: ${this.mainChannel.name}`);
+      }
+
+      // ThreadManagerとの統合
+      if (!this.threadManager) {
+        this.threadManager = new ThreadManager({
+          client: this.client,
+          parentChannel: this.mainChannel || this.targetChannel
+        });
+      }
+
+      console.log('承認チャンネル初期化完了');
+    } catch (error) {
+      console.error('承認チャンネル初期化エラー:', error.message);
+      throw error;
+    }
+  }
+
+  async integrateWithThreadManager(threadManager) {
+    this.threadManager = threadManager;
+  }
+
+  async formatApprovalMessage(approvalRequest, classification) {
+    const { testName, error, suggestion, requestId } = approvalRequest;
+    
+    let message = `🔍 **テスト失敗修正承認依頼**\n`;
+    message += `📝 Request ID: \`${requestId}\`\n\n`;
+    
+    // 問題概要
+    message += `**📊 問題概要**\n`;
+    message += `• テスト名: \`${testName}\`\n`;
+    message += `• エラー分類: ${classification.category} (${classification.severity})\n`;
+    message += `• 信頼度: ${Math.round(classification.confidence * 100)}%\n\n`;
+    
+    // 原因
+    message += `**⚠️ エラー原因**\n`;
+    const errorMsg = error.message.length > 200 
+      ? error.message.substring(0, 200) + '...'
+      : error.message;
+    message += `\`\`\`\n${errorMsg}\n\`\`\`\n\n`;
+    
+    // 修正提案
+    if (suggestion) {
+      message += `**💡 修正提案**\n`;
+      message += `• 修正方法: ${suggestion.description}\n`;
+      message += `• 自動化度: ${suggestion.automationLevel}\n`;
+      message += `• リスクレベル: ${suggestion.riskLevel}\n\n`;
+    }
+    
+    // 操作方法
+    message += `**🎯 操作方法**\n`;
+    message += `• ✅ 承認: このメッセージにリアクション\n`;
+    message += `• ❌ 拒否: 拒否リアクション\n`;
+    message += `• 📝 修正内容はこのスレッドで報告されます\n`;
+    
+    return message;
   }
 
   async cleanup() {

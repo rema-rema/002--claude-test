@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 開発モード管理
 
-#### 現在のモード: MAINTENANCE
+#### 現在のモード: IMPLEMENTATION
 
 ### 実装状況ステータス定義
 
