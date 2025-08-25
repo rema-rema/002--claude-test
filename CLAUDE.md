@@ -103,6 +103,44 @@ spec/
 4. **Kairo完了時**: spec/integration.mdに統合状況を記録
 5. **巨大化防止**: spec/requirements.mdは高レベル概要のみ維持
 
+#### 🔄 実装時の進捗更新ルール（厳守）
+**実装フェーズでの必須作業**:
+1. **タスク開始時**: `spec/kairo/[機能]/tasks.md`で該当タスクを進行中にマーク
+2. **タスク完了時**: **必ず**以下を同時実行
+   - タスクステータスを完了にマーク（✅完了、完了日付記載）
+   - 完了条件すべてにチェック
+   - マイルストーン進捗を更新
+   - 実装サマリーを追加（ファイル・テスト結果・成果物）
+3. **フェーズ完了時**: マイルストーンステータスを更新（🟡進行中 → ✅完了）
+
+**重要**: 実装作業とドキュメント更新は**必ずセット**で実行。これにより進捗の透明性を確保。
+
+#### 📁 開発ツールのディレクトリ配置ルール（厳守）
+**Discord関連開発ツールの配置**: 
+- **すべてのDiscord関連開発ツール** → `discord-bot/src/` 内に配置
+- **理由**: 製品コードとの混在を防ぎ、開発ツールを明確に分離
+- **対象**: Discord Bot機能、Discord通知システム、承認システム等
+
+**配置例**:
+```
+discord-bot/
+├── src/
+│   ├── components/      # Discord関連コンポーネント
+│   ├── services/        # Discord・Claude連携サービス  
+│   ├── utils/           # Discord関連ユーティリティ
+│   ├── tests/           # Discord関連テスト
+│   └── test-results/    # テスト実行結果
+├── docs/                # Discord専用ドキュメント
+├── jest.config.js       # Discord専用Jest設定
+├── jest.setup.js        # Discord専用Jestセットアップ
+└── package.json         # Discord専用パッケージ設定
+```
+
+**重要**: 
+- `src/` 直下にDiscord関連コードを配置しない
+- Discord専用の設定ファイルは `discord-bot/` 内に配置
+- 他プロジェクト部分とのテスト設定衝突を回避
+
 **注意**: A案（Kairo統合開発プラン）は `kairo-integration-plan.md` に保留中。Tsumiki稼働確認後に検討予定。
 
 ## Project Overview

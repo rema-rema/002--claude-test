@@ -8,7 +8,8 @@
     "start": "node discord-bot/src/index.js",
     "dev": "node --watch discord-bot/src/index.js",
     "capacity-check": "node discord-bot/src/utils/capacity-monitor.js",
-    "test": "jest"
+    "test": "cd discord-bot && node --experimental-vm-modules ../node_modules/.bin/jest",
+    "test:discord": "cd discord-bot && node --experimental-vm-modules ../node_modules/.bin/jest"
   },
   "keywords": [
     "discord",
