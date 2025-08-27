@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🚨 重大事故記録
+
+### 2025-08-26: .envファイル上書き事故
+**事故内容**: Claude Code AIが`cp .env.example .env`コマンドを実行し、実際の環境変数値を消失  
+**被害**: Discord Bot Token、Claude API Key、Channel ID等の実際の値が全て消失  
+**原因**: 作業中の不注意によるファイル上書き  
+**教訓**: **絶対に既存の.envファイルを上書きしてはならない**  
+**対策**: .envファイル操作前は必ずバックアップ作成を義務化
+
+### 2025-08-26: 方針転換決定記録
+**背景**: 95%完成のDiscord Bot実装において「調査します」応答のみで実作業しない問題を発見  
+**根本原因**: Claude Messages API制約により、Edit/MCP等の高機能ツールが利用不可  
+**解決策**: yamkz/claude-discord-bridge導入による完全Claude Code CLI活用  
+**決定**: Track A/B/C/D協議の結果、実用性を優先し方針転換を決定  
+**移行方針**: 既存実装保存 → 新ツール導入 → 不要ソース整理 → 本格運用  
+
 ## Kiro Spec駆動開発 - 絶対的なルール
 
 ### 基本原則
@@ -11,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 開発モード管理
 
-#### 現在のモード: IMPLEMENTATION
+#### 現在のモード: MAINTENANCE
 
 ### 実装状況ステータス定義
 
@@ -60,7 +76,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **完了条件**: task.md作成完了 → 実装許可確認 → 許可後に実装開始
 
 #### 4. IMPLEMENTATION モード（実装）
-**実行内容**: 設計書とタスクに従った実装・テスト
+**実行内容**: 設計書とタスクに従った実装・テスト  
+**重要ルール**: **実装前に必ず合意確認が必要**  
+**制約**: 「実装します」ではなく「〇〇を実装してよろしいですか？」で確認後に実装実行
 
 ### 継続開発・保守ルール
 - **追加機能・バグ修正**: 既存設計書に追加セクションとして記載
@@ -326,6 +344,60 @@ npx playwright test --screenshot=only-on-failure
 ```
 
 **重要**: GitHub Codespacesでは画面表示できないため、ヘッドレスモードでの実行が必須。テスト結果は録画・スクリーンショット機能で確認可能。
+
+## Claude-Discord-Bridge 導入記録
+
+### 2025-08-26: 方針転換実行
+**導入ツール**: yamkz/claude-discord-bridge  
+**GitHub**: https://github.com/yamkz/claude-discord-bridge  
+**セットアップ**: /home/node/.claude-discord-bridge/  
+**設定ファイル**: .env, sessions.json配置完了  
+
+### 起動・操作方法
+- **起動**: `~/.claude-discord-bridge/bin/vai`
+- **セッション監視**: `~/.claude-discord-bridge/bin/vai view`
+- **停止**: `~/.claude-discord-bridge/bin/vexit`
+- **セッション追加**: `~/.claude-discord-bridge/bin/vai add-session <channel_id>`
+
+### 設定詳細
+- **作業ディレクトリ**: `/workspaces/002--claude-test`
+- **Discordチャンネル**: `1405815779198369903` (main)
+- **Flaskポート**: `5001`
+- **Claude Code**: `--dangerously-skip-permissions` オプション有効
+
+## Discord経由の通知に対応するルール
+
+以下のような文言が含まれるメッセージを受け取った場合、「Discordからの通知」と判断してください：
+1. 「Discordからの通知:」で始まるメッセージ
+2. メッセージ末尾に `session=数字` が含まれる場合
+3. スラッシュコマンド（例：`/project-analyze session=1`）
+
+「Discordからの通知」がきた場合は以下のルールに従ってください：
+### 基本的な応答ルール
+1. **CLI応答は禁止。すべて`Bash`ツールを使って`dp`コマンドでメッセージを送信してください。**
+2. `dp`コマンドの使用例：
+   - `dp "応答メッセージ"` (デフォルトセッション)
+   - `dp 2 "セッション2への応答"` (特定セッション)
+   - `dp 1234567890 "チャンネルIDで直接送信"` (チャンネルID指定)
+
+### Discord返信時のメンション
+- 通常の返信にはユーザーのメンション `<@ユーザーID>` を含めてください
+- メッセージの先頭に配置すること
+- 引用形式（「> 」付き）での経過報告にはメンションを付けないこと
+
+### 画像添付への対応
+メッセージに `[添付画像のファイルパス: /path/to/image.png]` が含まれている場合：
+1. `Read`ツールでその画像ファイルを読み込み
+2. 画像の内容を分析して適切に応答
+3. UI/UXレビュー、コードレビュー、ドキュメント処理などに活用
+
+### 出力の例
+
+**出力例（改行含む長文対応）** 
+```
+dp 1 "<@ユーザー番号> {応答}\n{応答}" (Session=1の場合)
+dp 2 "<@ユーザー番号> {応答}\n{応答}" (Session=2の場合)
+```
 
 ## Testing and Debugging
 
