@@ -56,3 +56,19 @@ attachments/
 dp 1 "<@ユーザー番号> {応答}\n{応答}" (Session=1の場合)
 dp 2 "<@ユーザー番号> {応答}\n{応答}" (Session=2の場合)
 ```
+
+### プロセス管理システム
+
+#### 自動クリーンアップ機能
+Claude-Discord Bridgeは起動時に自動的に古いプロセスをクリーンアップします：
+- マーカーファイル方式（/tmp/claude-discord-bridge-*.pid）でプロセス管理
+- 起動時に古いClaude Code、Discord Bot、tmuxセッション等を自動終了
+- ゾンビプロセス（数日前の古いプロセス）も検知・削除
+
+#### 環境変数による動作制御
+- `CLAUDE_OPTIONS=--dangerously-skip-permissions` - 自動許可モード有効化
+- `CC_CLAUDE_USER_ID` - Claude BotのユーザーID（メンション用）
+- `CC_DISCORD_USER_ID` - 人間ユーザーのID（認証用）
+
+#### プロセス健全性監視
+各セッションのClaude Codeプロセスを監視し、異常終了時の自動復旧機能を提供

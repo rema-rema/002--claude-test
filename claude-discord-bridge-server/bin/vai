@@ -22,6 +22,7 @@ from lib.utils import (
     is_service_running, create_pid_file, stop_service,
     find_available_port, is_port_in_use
 )
+from test_marker_poc import ProcessMarkerManager
 
 def cmd_start():
     """サービスを起動"""
@@ -33,6 +34,12 @@ def cmd_start():
         print("Please run './install.sh' first.")
         sys.exit(1)
     
+    # Process marker management - cleanup old processes first
+    print("🧹 Cleaning up old processes...")
+    marker_manager = ProcessMarkerManager()
+    marker_manager.cleanup_old_processes()
+    marker_manager.cleanup_discord_bridge_processes()
+    
     # Check if already running
     if is_service_running('discord_bot') or is_service_running('flask_app'):
         print("⚠️  Services are already running.")
@@ -40,6 +47,9 @@ def cmd_start():
         return
     
     print("🚀 Starting Claude-Discord Bridge...")
+    
+    # Create process marker for this main process
+    main_marker = marker_manager.create_marker("main")
     
     # Start tmux session for monitoring
     tmux = TmuxManager()
@@ -57,6 +67,8 @@ def cmd_start():
     print("  Starting Claude Code sessions...")
     for session_num, channel_id in sessions:
         if tmux.create_claude_session(session_num, work_dir, claude_options):
+            # Create marker for each Claude session
+            marker_manager.create_marker(f"claude-session-{session_num}")
             time.sleep(1)  # Give each session time to start
         else:
             print(f"  ⚠️  Failed to start Claude session {session_num}")
@@ -69,6 +81,7 @@ def cmd_start():
     # Start Discord bot in pane 0
     print("  Starting Discord bot...")
     tmux.send_command("0.0", f"cd {src_dir} && python3 discord_bot.py")
+    marker_manager.create_marker("discord-bot")
     time.sleep(2)  # Give bot time to start
     
     # Start Flask app in pane 1
@@ -83,6 +96,7 @@ def cmd_start():
     
     print("  Starting Flask app...")
     tmux.send_command("0.1", f"cd {src_dir} && python3 flask_app.py")
+    marker_manager.create_marker("flask-app")
     
     # Third pane for monitoring
     tmux.send_command("0.2", "echo 'Claude-Discord Bridge - Monitoring'")

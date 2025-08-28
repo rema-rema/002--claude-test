@@ -35,9 +35,13 @@ def post_to_discord(channel_id: str, message: str):
         "Content-Type": "application/json"
     }
     
+    # メンションパターンを完全除去（<@数字>）
+    import re
+    clean_message = re.sub(r'<@\d+>\s*', '', message).strip()
+    
     # Payload
     payload = {
-        "content": message
+        "content": clean_message
     }
     
     try:

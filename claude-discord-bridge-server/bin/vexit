@@ -14,10 +14,16 @@ sys.path.insert(0, str(toolkit_root))
 
 from src.tmux_manager import TmuxManager
 from lib.utils import stop_service, is_service_running
+from test_marker_poc import ProcessMarkerManager
 
 def main():
     """メイン関数"""
     print("🛑 Stopping Claude-Discord Bridge...")
+    
+    # Process marker management - cleanup all processes
+    marker_manager = ProcessMarkerManager()
+    marker_manager.cleanup_old_processes()
+    marker_manager.cleanup_discord_bridge_processes()
     
     # Stop services
     services_stopped = False
