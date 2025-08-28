@@ -55,3 +55,13 @@ echo -e "${BLUE}📱 設定済みセッション:${NC}"
 ./bin/vai list-sessions 2>/dev/null | grep -A10 "Configured Sessions:" | tail -n +3 || echo "  設定済みセッションの取得に失敗"
 echo ""
 echo -e "${BLUE}Working Directory: /workspaces/002--claude-test${NC}"
+
+# セッション起動通知を送信
+echo ""
+echo -e "${BLUE}📡 各セッションに起動通知を送信中...${NC}"
+sleep 5  # セッションが完全に起動するまで待機
+./bin/startup-notify.py
+
+echo ""
+echo -e "${GREEN}✅ 全セッションの準備が完了しました！${NC}"
+echo -e "${GREEN}   会話を開始できます${NC}"
