@@ -200,7 +200,7 @@ discord-bot/
 
 **重要**: 
 - `src/` 直下にDiscord関連コードを配置しない
-- Discord専用の設定ファイルは `discord-bot/` 内に配置
+- Discord専用の設定ファイルは `claude-discord-bridge-server/` 内に配置
 - 他プロジェクト部分とのテスト設定衝突を回避
 
 **注意**: A案（Kairo統合開発プラン）は `kairo-integration-plan.md` に保留中。Tsumiki稼働確認後に検討予定。
@@ -344,6 +344,10 @@ claude mcp add serena -s project -- uvx --from git+https://github.com/oraios/ser
 After restart, run onboarding:
 - `/mcp__serena__check_onboarding_performed`
 - `/mcp__serena__onboarding` (if needed)
+
+**Dashboard Access**: http://localhost:24282/dashboard/  
+- Web dashboard is enabled but browser auto-launch is disabled
+- Manual access available for log monitoring and troubleshooting
 
 #### Tsumiki Framework
 AI支援型テスト駆動開発フレームワーク（Claude Codeスラッシュコマンドとして実装）:
