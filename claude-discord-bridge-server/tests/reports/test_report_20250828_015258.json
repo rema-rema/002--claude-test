@@ -1,0 +1,28 @@
+{
+  "timestamp": "20250828_015258",
+  "summary": {
+    "total_tests": 5,
+    "passed_tests": 5,
+    "success_rate": 1.0,
+    "total_time": 0.0077571868896484375
+  },
+  "suites": {
+    "TC-002": {
+      "name": "File Management Tests (SC-002 File Aspect)",
+      "passed": true,
+      "total_tests": 5,
+      "passed_tests": 5,
+      "execution_time": 0.0077571868896484375,
+      "failures": [],
+      "warnings": [
+        "TC-002-02: File conflict resolved by overwriting (acceptable)",
+        "TC-002-04: Duplicate naming pattern detected: duplicate_test_copy_3.txt",
+        "TC-002-04: Duplicate naming pattern detected: duplicate_test_copy_1.txt",
+        "TC-002-04: Duplicate naming pattern detected: duplicate_test_copy_2.txt",
+        "TC-002-04: Duplicate naming pattern detected: duplicate_test.txt",
+        "TC-002-05: Directory isolation maintained during cleanup operations"
+      ],
+      "success_criteria": "SC-002: セキュリティ・復旧機能"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "timestamp": "20250828_015406",
+  "summary": {
+    "total_tests": 5,
+    "passed_tests": 3,
+    "success_rate": 0.6,
+    "total_time": 60.01362943649292
+  },
+  "suites": {
+    "TC-003": {
+      "name": "Session Management Tests (SC-004)",
+      "passed": false,
+      "total_tests": 5,
+      "passed_tests": 3,
+      "execution_time": 60.01362943649292,
+      "failures": [
+        "TC-003-01: vai status command failed: [Errno 2] No such file or directory: 'python'",
+        "TC-003-05: vai help command failed: [Errno 2] No such file or directory: 'python'"
+      ],
+      "warnings": [
+        "TC-003-03: Full 24-hour stability test should be performed in production environment",
+        "TC-003-04: Unexpected error in default command: bash: line 1: python: command not found\n"
+      ],
+      "success_criteria": "SC-004: 運用性・安定性"
+    }
+  }
+}

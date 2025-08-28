@@ -1,0 +1,56 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Multi-Session Test Report - 20250828_015425</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; }
+        .summary { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .test-suite { margin: 20px 0; border: 1px solid #dee2e6; border-radius: 8px; }
+        .suite-header { background: #e9ecef; padding: 15px; font-weight: bold; }
+        .suite-passed { background: #d1edcc; }
+        .suite-failed { background: #f8c2c2; }
+        .test-details { padding: 15px; }
+        .metric { display: inline-block; margin: 10px 20px 10px 0; }
+        .pass { color: #28a745; }
+        .fail { color: #dc3545; }
+        .warn { color: #ffc107; }
+        .sc-mapping { background: #e3f2fd; padding: 10px; border-left: 4px solid #2196f3; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧪 Multi-Session Test Report</h1>
+        <p>Claude-Discord-Bridge Multi-Session Support Validation</p>
+        <p>Generated: 2025-08-28 01:54:25</p>
+    </div>
+    
+    <div class="summary">
+        <h2>📊 Test Summary</h2>
+        <div class="metric"><strong>Total Tests:</strong> 5</div>
+        <div class="metric"><strong>Passed:</strong> <span class="pass">5</span></div>
+        <div class="metric"><strong>Failed:</strong> <span class="fail">0</span></div>
+        <div class="metric"><strong>Success Rate:</strong> 100.0%</div>
+        <div class="metric"><strong>Total Time:</strong> 12.33s</div>
+    </div>
+
+    <div class="test-suite">
+        <div class="suite-header suite-passed">
+            ✅ TC-004: Recovery and Error Handling Tests (SC-002 Recovery Aspect)
+        </div>
+        <div class="test-details">
+            <div class="sc-mapping">
+                <strong>Success Criteria:</strong> SC-002: セキュリティ・復旧機能
+            </div>
+            <div class="metric"><strong>Tests:</strong> 5/5</div>
+            <div class="metric"><strong>Time:</strong> 12.33s</div>
+<h4 class='warn'>⚠️ Warnings:</h4><ul><li class='warn'>TC-004-02: Error message unclear for invalid session 0: bash: line 1: python: command not found
+</li><li class='warn'>TC-004-02: Error message unclear for invalid session -1: bash: line 1: python: command not found
+</li><li class='warn'>TC-004-02: Error message unclear for invalid session 99999: bash: line 1: python: command not found
+</li><li class='warn'>TC-004-02: Error message unclear for invalid session abc: bash: line 1: python: command not found
+</li><li class='warn'>TC-004-02: Error message unclear for invalid session : bash: line 1: python: command not found
+</li><li class='warn'>TC-004-02: Invalid channel ID invalid was accepted</li><li class='warn'>TC-004-02: Invalid channel ID 123 was accepted</li><li class='warn'>TC-004-02: Invalid channel ID abc123def was accepted</li><li class='warn'>TC-004-02: Invalid channel ID  was accepted</li><li class='warn'>TC-004-02: File creation succeeded for invalid session (auto-creation)</li><li class='warn'>TC-004-02: Concurrent error handling unclear for session 9999</li><li class='warn'>TC-004-02: Concurrent error handling unclear for session 10001</li><li class='warn'>TC-004-02: Concurrent error handling unclear for session 10002</li><li class='warn'>TC-004-02: Concurrent error handling unclear for session 10000</li><li class='warn'>TC-004-02: Concurrent error handling unclear for session 10003</li><li class='warn'>TC-004-04: vai recover command failed: [Errno 2] No such file or directory: 'python'</li><li class='warn'>TC-004-04: vai doctor command failed: [Errno 2] No such file or directory: 'python'</li><li class='warn'>TC-004-04: Manual session recovery successful</li><li class='warn'>TC-004-04: Some recovery operations failed: 75.0% success</li></ul></div></div>
+</body>
+</html>

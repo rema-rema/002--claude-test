@@ -1,0 +1,29 @@
+{
+  "timestamp": "20250828_014913",
+  "summary": {
+    "total_tests": 5,
+    "passed_tests": 4,
+    "success_rate": 0.8,
+    "total_time": 0.14922428131103516
+  },
+  "suites": {
+    "TC-001": {
+      "name": "Basic Functionality Tests (SC-001)",
+      "passed": false,
+      "total_tests": 5,
+      "passed_tests": 4,
+      "execution_time": 0.14922428131103516,
+      "failures": [
+        "TC-001-04: Invalid session 0 not properly rejected",
+        "TC-001-04: Invalid session -1 not properly rejected",
+        "TC-001-04: Invalid session 10000 not properly rejected",
+        "TC-001-04: Invalid session 99999 not properly rejected"
+      ],
+      "warnings": [
+        "TC-001-02: Claude Code independence verified through session isolation",
+        "TC-001-05: System should handle up to 100 sessions"
+      ],
+      "success_criteria": "SC-001: 基本機能"
+    }
+  }
+}

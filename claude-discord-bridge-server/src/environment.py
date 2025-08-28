@@ -16,11 +16,8 @@ class EnvironmentDetector:
     
     def __init__(self):
         self.toolkit_root = Path(__file__).parent.parent
-        # Support both old and new config directory names for backward compatibility
-        old_config_dir = Path.home() / '.claude-cli-toolkit'
-        new_config_dir = Path.home() / '.claude-discord-bridge'
-        
-        self.config_dir = new_config_dir if new_config_dir.exists() else old_config_dir
+        # Use current script directory as config directory for Codespaces deployment  
+        self.config_dir = self.toolkit_root
         self.env_file = self.config_dir / '.env'
         
     def detect_all(self) -> Dict[str, any]:

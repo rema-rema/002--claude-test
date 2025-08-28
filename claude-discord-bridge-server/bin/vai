@@ -16,6 +16,7 @@ sys.path.insert(0, str(toolkit_root))
 from src.environment import EnvironmentDetector
 from src.tmux_manager import TmuxManager
 from src.attachment_manager import AttachmentManager
+from src.session_manager import SessionManager
 from config.settings import SettingsManager
 from lib.utils import (
     is_service_running, create_pid_file, stop_service,
@@ -113,13 +114,13 @@ def cmd_start():
             print(f"  ... and {len(claude_sessions) - 3} more")
 
 def cmd_status():
-    """サービスの状態を確認"""
+    """サービスの状態を確認（マルチセッション対応）"""
     settings = SettingsManager()
     tmux = TmuxManager()
-    attachment_manager = AttachmentManager()
+    session_manager = SessionManager()
     
-    print("📊 Claude-Discord Bridge Status")
-    print("=" * 40)
+    print("📊 Claude-Discord Bridge Multi-Session Status")
+    print("=" * 50)
     
     # Configuration
     print("\n⚙️  Configuration:")
@@ -131,40 +132,77 @@ def cmd_status():
     print(f"  Flask App: {'✅ Running' if is_service_running('flask_app') else '❌ Stopped'}")
     print(f"  tmux Session: {'✅ Active' if tmux.is_session_exists() else '❌ Inactive'}")
     
-    # Discord Sessions
+    # Discord Sessions with SessionManager
     print("\n💬 Discord Sessions:")
     sessions = settings.list_sessions()
     if sessions:
         for num, channel_id in sessions:
-            default = " (default)" if num == settings.get_default_session() else ""
-            print(f"  Session {num}: {channel_id}{default}")
+            default = " ⭐ (default)" if num == session_manager.get_default_session() else ""
+            # セッション健康状態は TmuxManager で確認
+            is_healthy = tmux.check_session_health(num) if tmux else False
+            health_icon = "💚" if is_healthy else "💔"
+            print(f"  Session {num}: {channel_id}{default} {health_icon}")
     else:
-        print("  No sessions configured")
+        print("  ❌ No sessions configured")
+        print("  Run './bin/vai add-session <channel_id>' to add a session")
     
-    # Claude Sessions
+    # Claude Sessions with detailed status
     print("\n🤖 Claude Code Sessions:")
     claude_sessions = tmux.list_claude_sessions()
     if claude_sessions:
+        session_stats = tmux.get_session_stats()
+        print(f"  Total Active: {session_stats['active_sessions']}/{session_stats['total_sessions']}")
+        
         for num, session_name in claude_sessions:
             running = "✅ Running" if tmux.is_claude_session_exists(num) else "❌ Stopped"
-            print(f"  Session {num}: {running}")
+            detailed_status = tmux.get_session_detailed_status(num)
+            
+            recovery_info = ""
+            if detailed_status.get('recovery_count', 0) > 0:
+                recovery_info = f" (recovered {detailed_status['recovery_count']}x)"
+            
+            print(f"  Session {num}: {running}{recovery_info}")
+            if detailed_status.get('status') == 'error':
+                print(f"    ⚠️  Status: Error detected")
     else:
-        print("  No Claude sessions found")
+        print("  ❌ No Claude sessions found")
+        print("  Run './bin/vai' to start sessions")
     
-    # Attachment Storage
+    # Attachment Storage - Multi-session
     print("\n📎 Attachment Storage:")
-    storage_info = attachment_manager.get_storage_info()
-    if 'error' in storage_info:
-        print(f"  ❌ Error: {storage_info['error']}")
-    else:
-        print(f"  Files: {storage_info['total_files']}")
-        print(f"  Size: {storage_info['total_size_mb']} MB")
-        print(f"  Directory: {storage_info['directory']}")
+    try:
+        all_sessions_info = AttachmentManager.get_all_sessions_info(settings.config_dir)
+        if all_sessions_info:
+            total_files = sum(info['total_files'] for info in all_sessions_info)
+            total_size_mb = sum(info['total_size_mb'] for info in all_sessions_info)
+            
+            print(f"  Total Files: {total_files}")
+            print(f"  Total Size: {total_size_mb:.2f} MB")
+            print(f"  Active Sessions: {len([info for info in all_sessions_info if info['status'] == 'active'])}")
+            
+            # Show per-session breakdown
+            for info in all_sessions_info:
+                status_icon = "📁" if info['status'] == 'active' else "📂"
+                print(f"    Session {info['session_id']}: {info['total_files']} files ({info['total_size_mb']}MB) {status_icon}")
+        else:
+            print("  📂 No attachment directories found")
+    except Exception as e:
+        print(f"  ❌ Error getting storage info: {e}")
     
     # Ports
     flask_port = settings.get_port('flask')
     print(f"\n🔌 Ports:")
     print(f"  Flask: {flask_port} {'✅ Available' if not is_port_in_use(flask_port) else '❌ In use'}")
+    
+    # Summary
+    print(f"\n📊 Summary:")
+    active_claude = len(claude_sessions) if claude_sessions else 0
+    configured_sessions = len(sessions) if sessions else 0
+    print(f"  Configured Sessions: {configured_sessions}")
+    print(f"  Active Claude Sessions: {active_claude}")
+    
+    if configured_sessions > 0 and active_claude == 0:
+        print(f"  💡 Tip: Run './bin/vai' to start Claude Code sessions")
 
 def cmd_doctor():
     """環境診断を実行"""
@@ -190,8 +228,8 @@ def cmd_list_sessions():
         print(f"Session {num}: {channel_id}{default}")
 
 def cmd_add_session(channel_id: str):
-    """新しいセッションを追加"""
-    settings = SettingsManager()
+    """新しいセッションを追加（SessionManager使用）"""
+    session_manager = SessionManager()
     
     # Validate channel ID
     if not channel_id.isdigit() or len(channel_id) < 15:
@@ -200,18 +238,101 @@ def cmd_add_session(channel_id: str):
         return
     
     # Check if already exists
-    existing_session = settings.channel_to_session(channel_id)
+    existing_session = session_manager.get_session_by_channel(channel_id)
     if existing_session:
         print(f"⚠️  Channel {channel_id} is already configured as session {existing_session}")
         return
     
-    # Add session
-    session_num = settings.add_session(channel_id)
-    print(f"✅ Added channel {channel_id} as session {session_num}")
+    try:
+        # Add session using SessionManager
+        session_id = session_manager.add_session(channel_id)
+        print(f"✅ Added channel {channel_id} as session {session_id}")
+        
+        # Create attachments directory for new session
+        attachment_manager = AttachmentManager(session_id=session_id)
+        print(f"📁 Created attachments directory: session_{session_id}/")
+        
+        # Update sessions list in memory if bot is running
+        if is_service_running('discord_bot'):
+            print("ℹ️  Restart the bot to use the new session")
+            
+    except Exception as e:
+        print(f"❌ Failed to add session: {e}")
+
+def cmd_remove_session(session_arg: str):
+    """セッションを削除（SessionManager使用）"""
+    session_manager = SessionManager()
     
-    # Update sessions list in memory if bot is running
-    if is_service_running('discord_bot'):
-        print("ℹ️  Restart the bot to use the new session")
+    # Validate session number
+    if not session_arg.isdigit():
+        print("❌ Invalid session number format")
+        print("Usage: vai remove-session <session_number>")
+        return
+    
+    session_id = int(session_arg)
+    
+    # Check if session exists
+    if not session_manager.is_session_active(session_id):
+        print(f"❌ Session {session_id} not found or not active")
+        return
+    
+    # Check if it's the default session
+    if session_id == session_manager.get_default_session():
+        print("❌ Cannot remove default session")
+        return
+    
+    try:
+        # Remove session
+        success = session_manager.remove_session(session_id)
+        if success:
+            print(f"✅ Removed session {session_id}")
+            print("ℹ️  Restart the bot to apply changes")
+        else:
+            print(f"❌ Failed to remove session {session_id}")
+    except Exception as e:
+        print(f"❌ Error removing session: {e}")
+
+def cmd_recover_session(session_arg: str):
+    """セッション復旧（SessionManager使用）"""
+    session_manager = SessionManager()
+    tmux = TmuxManager()
+    settings = SettingsManager()
+    
+    # Validate session number
+    if not session_arg.isdigit():
+        print("❌ Invalid session number format")
+        print("Usage: vai recover <session_number>")
+        return
+    
+    session_id = int(session_arg)
+    
+    # Check if session exists in configuration
+    if not session_manager.is_session_active(session_id):
+        print(f"❌ Session {session_id} not found in configuration")
+        return
+    
+    try:
+        print(f"🔧 Recovering session {session_id}...")
+        
+        # Kill existing tmux session if it exists
+        if tmux.is_claude_session_exists(session_id):
+            print(f"  Killing existing tmux session...")
+            tmux.kill_claude_session(session_id)
+            time.sleep(1)
+        
+        # Create new Claude session
+        work_dir = settings.get_claude_work_dir()
+        claude_options = settings.get_claude_options()
+        
+        if tmux.create_claude_session(session_id, work_dir, claude_options):
+            print(f"✅ Successfully recovered session {session_id}")
+            session_manager.update_session_health(session_id, True)
+        else:
+            print(f"❌ Failed to recover session {session_id}")
+            session_manager.update_session_health(session_id, False)
+            
+    except Exception as e:
+        print(f"❌ Error recovering session {session_id}: {e}")
 
 def cmd_view():
     """全セッションを1画面でリアルタイム表示"""
@@ -383,18 +504,28 @@ def _create_linked_view(view_session, pane_target, claude_session, session_num):
     ])
 
 def print_usage():
-    """使用方法を表示"""
-    print("vai - Claude-Discord Bridge Manager")
-    print("\nUsage:")
-    print("  vai                    Start all services")
-    print("  vai status             Check service status")
-    print("  vai doctor             Run environment diagnosis")
-    print("  vai view               View all sessions in one screen")
-    print("  vai list-sessions      List configured sessions")
-    print("  vai add-session <id>   Add new Discord channel session")
-    print("\nOther commands:")
-    print("  vexit                  Stop all services")
-    print("  dp [session] 'msg'     Send message to Discord")
+    """使用方法を表示（マルチセッション対応）"""
+    print("vai - Claude-Discord Bridge Multi-Session Manager")
+    print("\nCore Commands:")
+    print("  vai                         Start all services")
+    print("  vai status                  Check multi-session status") 
+    print("  vai doctor                  Run environment diagnosis")
+    print("  vai view                    View all sessions in one screen")
+    print("\nSession Management:")
+    print("  vai list-sessions           List configured sessions")
+    print("  vai add-session <ch_id>     Add new Discord channel session")
+    print("  vai remove-session <num>    Remove session (except default)")
+    print("  vai recover <num>           Recover failed session")
+    print("\nMessage Commands:")
+    print("  dp 'message'                Send to default session")
+    print("  dp <num> 'message'          Send to specific session")
+    print("  dp <channel_id> 'message'   Send to specific channel")
+    print("\nOther Commands:")
+    print("  vexit                       Stop all services")
+    print("\nExamples:")
+    print("  vai add-session 1234567890123456")
+    print("  vai recover 2")
+    print("  dp 3 'Hello from session 3'") 
 
 def main():
     """メイン関数"""
@@ -422,6 +553,10 @@ def main():
         arg = sys.argv[2]
         if command == 'add-session':
             cmd_add_session(arg)
+        elif command == 'remove-session':
+            cmd_remove_session(arg)
+        elif command == 'recover':
+            cmd_recover_session(arg)
         else:
             print(f"Unknown command: {command}")
             print_usage()

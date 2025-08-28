@@ -1,0 +1,23 @@
+{
+  "timestamp": "20250828_015432",
+  "summary": {
+    "total_tests": 5,
+    "passed_tests": 4,
+    "success_rate": 0.8,
+    "total_time": 1.01735520362854
+  },
+  "suites": {
+    "TC-005": {
+      "name": "Performance Tests (SC-003)",
+      "passed": false,
+      "total_tests": 5,
+      "passed_tests": 4,
+      "execution_time": 1.01735520362854,
+      "failures": [
+        "TC-005-04: Total memory usage exceeded 2048MB: 3057.2MB"
+      ],
+      "warnings": [],
+      "success_criteria": "SC-003: パフォーマンス・リソース管理"
+    }
+  }
+}

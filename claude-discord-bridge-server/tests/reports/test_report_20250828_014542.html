@@ -1,0 +1,51 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Multi-Session Test Report - 20250828_014542</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; }
+        .summary { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .test-suite { margin: 20px 0; border: 1px solid #dee2e6; border-radius: 8px; }
+        .suite-header { background: #e9ecef; padding: 15px; font-weight: bold; }
+        .suite-passed { background: #d1edcc; }
+        .suite-failed { background: #f8c2c2; }
+        .test-details { padding: 15px; }
+        .metric { display: inline-block; margin: 10px 20px 10px 0; }
+        .pass { color: #28a745; }
+        .fail { color: #dc3545; }
+        .warn { color: #ffc107; }
+        .sc-mapping { background: #e3f2fd; padding: 10px; border-left: 4px solid #2196f3; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧪 Multi-Session Test Report</h1>
+        <p>Claude-Discord-Bridge Multi-Session Support Validation</p>
+        <p>Generated: 2025-08-28 01:45:42</p>
+    </div>
+    
+    <div class="summary">
+        <h2>📊 Test Summary</h2>
+        <div class="metric"><strong>Total Tests:</strong> 5</div>
+        <div class="metric"><strong>Passed:</strong> <span class="pass">3</span></div>
+        <div class="metric"><strong>Failed:</strong> <span class="fail">2</span></div>
+        <div class="metric"><strong>Success Rate:</strong> 60.0%</div>
+        <div class="metric"><strong>Total Time:</strong> 0.19s</div>
+    </div>
+
+    <div class="test-suite">
+        <div class="suite-header suite-failed">
+            ❌ TC-001: Basic Functionality Tests (SC-001)
+        </div>
+        <div class="test-details">
+            <div class="sc-mapping">
+                <strong>Success Criteria:</strong> SC-001: 基本機能
+            </div>
+            <div class="metric"><strong>Tests:</strong> 3/5</div>
+            <div class="metric"><strong>Time:</strong> 0.19s</div>
+<h4 class='fail'>❌ Failures:</h4><ul><li class='fail'>TC-001-01: Session 1 not configured</li><li class='fail'>TC-001-04: Invalid session 0 not properly rejected</li><li class='fail'>TC-001-04: Invalid session -1 not properly rejected</li><li class='fail'>TC-001-04: Invalid session 10000 not properly rejected</li><li class='fail'>TC-001-04: Invalid session 99999 not properly rejected</li></ul><h4 class='warn'>⚠️ Warnings:</h4><ul><li class='warn'>TC-001-02: Claude Code independence verified through session isolation</li><li class='warn'>TC-001-05: System should handle up to 100 sessions</li></ul></div></div>
+</body>
+</html>

@@ -169,15 +169,17 @@ class StorageManager:
     - 容量制限管理
     """
     
-    def __init__(self, config_dir: Path):
+    def __init__(self, config_dir: Path, session_id: int = 1):
         """
         ストレージマネージャーの初期化
         
         Args:
             config_dir: 設定ディレクトリパス
+            session_id: セッション番号（デフォルト: 1）
         """
         self.config_dir = config_dir
-        self.attachments_dir = config_dir / 'attachments'
+        self.session_id = session_id
+        self.attachments_dir = config_dir / 'attachments' / f'session_{session_id}'
         self.ensure_storage_directory()
     
     def ensure_storage_directory(self):
@@ -191,7 +193,9 @@ class StorageManager:
         """
         try:
             self.attachments_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Storage directory ensured: {self.attachments_dir}")
+            # セッション別ディレクトリに700権限設定（セキュリティ強化）
+            os.chmod(self.attachments_dir, 0o700)
+            logger.info(f"Storage directory ensured: {self.attachments_dir} (session_{self.session_id})")
         except Exception as e:
             logger.error(f"Failed to create storage directory: {e}")
             raise
@@ -409,6 +413,7 @@ class AttachmentManager:
     - モジュラー設計による拡張性
     - 堅牢なエラーハンドリング
     - 自動リソース管理
+    - マルチセッション対応
     
     拡張可能要素：
     - ファイル変換処理
@@ -418,13 +423,46 @@ class AttachmentManager:
     - バックアップ・同期機能
     """
     
-    def __init__(self):
+    def __init__(self, session_id: int = 1):
         """
         添付ファイルマネージャーの初期化
+        
+        Args:
+            session_id: セッション番号（デフォルト: 1）
         """
+        self.session_id = session_id
         self.settings = SettingsManager()
-        self.storage_manager = StorageManager(self.settings.config_dir)
+        self.storage_manager = StorageManager(self.settings.config_dir, session_id)
         self.downloader = AttachmentDownloader(self.storage_manager)
+        
+        # セッション管理用のマネージャーを初期化時にロード（必要に応じて）
+        self._session_manager = None
+    
+    def set_session_manager(self, session_manager):
+        """
+        SessionManagerインスタンスを設定
+        
+        Args:
+            session_manager: SessionManagerインスタンス
+        """
+        self._session_manager = session_manager
+    
+    @classmethod
+    def create_for_session(cls, session_id: int, session_manager=None):
+        """
+        指定セッション用のAttachmentManagerインスタンス作成
+        
+        Args:
+            session_id: セッション番号
+            session_manager: SessionManagerインスタンス（オプション）
+        
+        Returns:
+            AttachmentManager: セッション専用インスタンス
+        """
+        instance = cls(session_id)
+        if session_manager:
+            instance.set_session_manager(session_manager)
+        return instance
     
     async def process_attachments(self, attachments) -> List[str]:
         """
@@ -444,7 +482,7 @@ class AttachmentManager:
         if not attachments:
             return []
         
-        logger.info(f"Processing {len(attachments)} attachment(s)")
+        logger.info(f"Processing {len(attachments)} attachment(s) for session_{self.session_id}")
         
         # 並列ダウンロード実行
         tasks = [self.downloader.download_attachment(attachment) for attachment in attachments]
@@ -488,7 +526,72 @@ class AttachmentManager:
         Returns:
             Dict[str, Any]: ストレージ使用状況
         """
-        return self.storage_manager.get_storage_info()
+        info = self.storage_manager.get_storage_info()
+        info['session_id'] = self.session_id
+        return info
+    
+    def get_session_attachments_info(self) -> Dict[str, Any]:
+        """
+        セッション別添付ファイル統計情報を取得
+        
+        Returns:
+            Dict[str, Any]: セッション別統計
+        """
+        info = self.get_storage_info()
+        return {
+            'session_id': self.session_id,
+            'directory': info['directory'],
+            'total_files': info['total_files'],
+            'total_size_mb': info['total_size_mb'],
+            'last_updated': info.get('last_updated', ''),
+            'storage_status': 'active' if info['total_files'] > 0 else 'empty'
+        }
+    
+    @classmethod
+    def get_all_sessions_info(cls, config_dir: Path) -> List[Dict[str, Any]]:
+        """
+        全セッションの添付ファイル情報を取得
+        
+        Args:
+            config_dir: 設定ディレクトリパス
+        
+        Returns:
+            List[Dict[str, Any]]: 全セッションの統計リスト
+        """
+        attachments_base = config_dir / 'attachments'
+        if not attachments_base.exists():
+            return []
+        
+        sessions_info = []
+        
+        # session_* ディレクトリを検索
+        for session_dir in attachments_base.glob('session_*'):
+            if session_dir.is_dir():
+                try:
+                    # セッション番号を抽出
+                    session_num = int(session_dir.name.split('_')[1])
+                    
+                    # 一時的なStorageManagerでディレクトリ情報を取得
+                    temp_storage = StorageManager(config_dir, session_num)
+                    info = temp_storage.get_storage_info()
+                    
+                    sessions_info.append({
+                        'session_id': session_num,
+                        'directory': str(session_dir),
+                        'total_files': info['total_files'],
+                        'total_size_mb': info['total_size_mb'],
+                        'status': 'active' if info['total_files'] > 0 else 'empty'
+                    })
+                except (ValueError, IndexError) as e:
+                    logger.warning(f"Invalid session directory name: {session_dir.name}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Error getting info for {session_dir.name}: {e}")
+                    continue
+        
+        # セッション番号でソート
+        sessions_info.sort(key=lambda x: x['session_id'])
+        return sessions_info
 
 # テスト・デバッグ用関数
 async def test_attachment_manager():
@@ -500,14 +603,27 @@ async def test_attachment_manager():
     - パフォーマンステスト
     - ストレステスト
     """
-    manager = AttachmentManager()
+    # 複数セッションでのテスト
+    print("=== Multi-Session Attachment Manager Test ===")
     
-    print(f"Storage directory: {manager.storage_manager.attachments_dir}")
-    print(f"Storage info: {manager.get_storage_info()}")
+    # セッション1, 2, 3のテスト
+    for session_id in [1, 2, 3]:
+        manager = AttachmentManager(session_id)
+        print(f"\nSession {session_id}:")
+        print(f"  Storage directory: {manager.storage_manager.attachments_dir}")
+        print(f"  Storage info: {manager.get_session_attachments_info()}")
+        
+        # クリーンアップテスト
+        deleted = manager.cleanup_old_files()
+        print(f"  Cleanup: {deleted} files deleted")
     
-    # クリーンアップテスト
-    deleted = manager.cleanup_old_files()
-    print(f"Cleanup: {deleted} files deleted")
+    # 全セッション情報の取得テスト
+    from config.settings import SettingsManager
+    settings = SettingsManager()
+    all_sessions = AttachmentManager.get_all_sessions_info(settings.config_dir)
+    print(f"\n=== All Sessions Info ===")
+    for session_info in all_sessions:
+        print(f"Session {session_info['session_id']}: {session_info['total_files']} files, {session_info['total_size_mb']}MB")
 
 if __name__ == "__main__":
     asyncio.run(test_attachment_manager())

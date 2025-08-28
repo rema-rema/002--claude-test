@@ -1,0 +1,41 @@
+{
+  "timestamp": "20250828_015425",
+  "summary": {
+    "total_tests": 5,
+    "passed_tests": 5,
+    "success_rate": 1.0,
+    "total_time": 12.327878713607788
+  },
+  "suites": {
+    "TC-004": {
+      "name": "Recovery and Error Handling Tests (SC-002 Recovery Aspect)",
+      "passed": true,
+      "total_tests": 5,
+      "passed_tests": 5,
+      "execution_time": 12.327878713607788,
+      "failures": [],
+      "warnings": [
+        "TC-004-02: Error message unclear for invalid session 0: bash: line 1: python: command not found\n",
+        "TC-004-02: Error message unclear for invalid session -1: bash: line 1: python: command not found\n",
+        "TC-004-02: Error message unclear for invalid session 99999: bash: line 1: python: command not found\n",
+        "TC-004-02: Error message unclear for invalid session abc: bash: line 1: python: command not found\n",
+        "TC-004-02: Error message unclear for invalid session : bash: line 1: python: command not found\n",
+        "TC-004-02: Invalid channel ID invalid was accepted",
+        "TC-004-02: Invalid channel ID 123 was accepted",
+        "TC-004-02: Invalid channel ID abc123def was accepted",
+        "TC-004-02: Invalid channel ID  was accepted",
+        "TC-004-02: File creation succeeded for invalid session (auto-creation)",
+        "TC-004-02: Concurrent error handling unclear for session 9999",
+        "TC-004-02: Concurrent error handling unclear for session 10001",
+        "TC-004-02: Concurrent error handling unclear for session 10002",
+        "TC-004-02: Concurrent error handling unclear for session 10000",
+        "TC-004-02: Concurrent error handling unclear for session 10003",
+        "TC-004-04: vai recover command failed: [Errno 2] No such file or directory: 'python'",
+        "TC-004-04: vai doctor command failed: [Errno 2] No such file or directory: 'python'",
+        "TC-004-04: Manual session recovery successful",
+        "TC-004-04: Some recovery operations failed: 75.0% success"
+      ],
+      "success_criteria": "SC-002: セキュリティ・復旧機能"
+    }
+  }
+}

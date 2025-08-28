@@ -1,0 +1,51 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Multi-Session Test Report - 20250828_015432</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; }
+        .summary { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .test-suite { margin: 20px 0; border: 1px solid #dee2e6; border-radius: 8px; }
+        .suite-header { background: #e9ecef; padding: 15px; font-weight: bold; }
+        .suite-passed { background: #d1edcc; }
+        .suite-failed { background: #f8c2c2; }
+        .test-details { padding: 15px; }
+        .metric { display: inline-block; margin: 10px 20px 10px 0; }
+        .pass { color: #28a745; }
+        .fail { color: #dc3545; }
+        .warn { color: #ffc107; }
+        .sc-mapping { background: #e3f2fd; padding: 10px; border-left: 4px solid #2196f3; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧪 Multi-Session Test Report</h1>
+        <p>Claude-Discord-Bridge Multi-Session Support Validation</p>
+        <p>Generated: 2025-08-28 01:54:32</p>
+    </div>
+    
+    <div class="summary">
+        <h2>📊 Test Summary</h2>
+        <div class="metric"><strong>Total Tests:</strong> 5</div>
+        <div class="metric"><strong>Passed:</strong> <span class="pass">4</span></div>
+        <div class="metric"><strong>Failed:</strong> <span class="fail">1</span></div>
+        <div class="metric"><strong>Success Rate:</strong> 80.0%</div>
+        <div class="metric"><strong>Total Time:</strong> 1.02s</div>
+    </div>
+
+    <div class="test-suite">
+        <div class="suite-header suite-failed">
+            ❌ TC-005: Performance Tests (SC-003)
+        </div>
+        <div class="test-details">
+            <div class="sc-mapping">
+                <strong>Success Criteria:</strong> SC-003: パフォーマンス・リソース管理
+            </div>
+            <div class="metric"><strong>Tests:</strong> 4/5</div>
+            <div class="metric"><strong>Time:</strong> 1.02s</div>
+<h4 class='fail'>❌ Failures:</h4><ul><li class='fail'>TC-005-04: Total memory usage exceeded 2048MB: 3057.2MB</li></ul><h4>📈 Performance Metrics:</h4><ul><li><strong>TC-005-01:</strong> {'avg_response_time': 0.0024867653846740723, 'max_response_time': 0.004412412643432617, 'min_response_time': 0.0017096996307373047, 'response_time_threshold': 3.0, 'success_rate_percent': 100.0}</li><li><strong>TC-005-02:</strong> {'file_processing_times': [0.0028040409088134766, 0.007622480392456055, 0.01348423957824707], 'avg_processing_time': 0.007970253626505533, 'max_processing_time': 0.01348423957824707, 'throughput_mb_per_sec': 593.2852166840532}</li><li><strong>TC-005-03:</strong> {'avg_switch_time': 0.00019308498927525112, 'max_switch_time': 0.00023746490478515625, 'min_switch_time': 0.00015091896057128906, 'switch_time_threshold': 1.0, 'switch_success_rate': 100.0}</li><li><strong>TC-005-04:</strong> {'max_total_memory_mb': 3069.3046875, 'max_process_memory_mb': 37.3359375, 'avg_memory_percent': 43.233333333333334, 'memory_limit_mb': 2048, 'memory_increase_mb': 19.921875}</li><li><strong>TC-005-05:</strong> {'total_concurrent_files': 20, 'successful_files': 20, 'failed_files': 0, 'total_processing_time': 0.057385921478271484, 'success_rate_percent': 100.0, 'avg_file_time': 0.013535213470458985, 'max_file_time': 0.03100419044494629, 'min_file_time': 0.0035436153411865234, 'throughput_files_per_sec': 348.5175367894505}</li></ul></div></div>
+</body>
+</html>

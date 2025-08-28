@@ -37,7 +37,8 @@ except ImportError:
     sys.exit(1)
 
 from config.settings import SettingsManager
-from attachment_manager import AttachmentManager
+from src.attachment_manager import AttachmentManager
+from src.session_manager import SessionManager
 
 # ログ設定（本番環境では外部設定ファイルから読み込み可能）
 logging.basicConfig(
@@ -114,14 +115,17 @@ class ClaudeCLIBot(commands.Bot):
     
     def __init__(self, settings_manager: SettingsManager):
         """
-        Botインスタンスの初期化
+        Botインスタンスの初期化（マルチセッション対応）
         
         Args:
             settings_manager: 設定管理インスタンス
         """
         self.settings = settings_manager
-        self.attachment_manager = AttachmentManager()
+        self.session_manager = SessionManager()
         self.message_processor = MessageProcessor()
+        
+        # セッション別AttachmentManagerのキャッシュ
+        self.attachment_managers = {}  # {session_id: AttachmentManager}
         
         # Discord Bot設定
         intents = discord.Intents.default()
@@ -150,16 +154,36 @@ class ClaudeCLIBot(commands.Bot):
         
     async def _perform_initial_cleanup(self):
         """
-        Bot起動時の初回クリーンアップ処理
+        Bot起動時の初回クリーンアップ処理（マルチセッション対応）
         
         拡張ポイント：
         - 古いセッションデータの削除
         - ログファイルのローテーション
         - キャッシュの初期化
         """
-        cleanup_count = self.attachment_manager.cleanup_old_files()
-        if cleanup_count > 0:
-            print(f'🧹 Cleaned up {cleanup_count} old attachment files')
+        # 全セッションのクリーンアップ実行
+        total_cleanup_count = 0
+        
+        # 現在設定されている全セッション取得
+        sessions = self.settings.list_sessions()
+        session_ids = [session_num for session_num, _ in sessions]
+        
+        # デフォルトセッション追加（存在しない場合）
+        default_session = self.session_manager.get_default_session()
+        if default_session not in session_ids:
+            session_ids.append(default_session)
+        
+        # 各セッションでクリーンアップ実行
+        for session_id in session_ids:
+            attachment_manager = self._get_attachment_manager(session_id)
+            cleanup_count = attachment_manager.cleanup_old_files()
+            total_cleanup_count += cleanup_count
+            
+            if cleanup_count > 0:
+                logger.info(f'Session {session_id}: Cleaned up {cleanup_count} old files')
+        
+        if total_cleanup_count > 0:
+            print(f'🧹 Cleaned up {total_cleanup_count} old attachment files across all sessions')
             
     async def _start_maintenance_tasks(self):
         """
@@ -198,10 +222,12 @@ class ClaudeCLIBot(commands.Bot):
         if not await self._validate_message(message):
             return
         
-        # セッション確認
-        session_num = self.settings.channel_to_session(str(message.channel.id))
-        if session_num is None:
-            return
+        # セッション確認（SessionManagerを使用）
+        session_id = self.session_manager.get_session_by_channel(str(message.channel.id))
+        if session_id is None:
+            # デフォルトセッション使用
+            session_id = self.session_manager.get_default_session()
+            logger.debug(f"Using default session {session_id} for channel {message.channel.id}")
         
         # ユーザーフィードバック（即座のローディング表示）
         loading_msg = await self._send_loading_feedback(message.channel)
@@ -210,7 +236,7 @@ class ClaudeCLIBot(commands.Bot):
         
         try:
             # メッセージ処理パイプライン
-            result_text = await self._process_message_pipeline(message, session_num)
+            result_text = await self._process_message_pipeline(message, session_id)
             
         except Exception as e:
             result_text = f"❌ 処理エラー: {str(e)[:100]}"
@@ -218,6 +244,22 @@ class ClaudeCLIBot(commands.Bot):
         
         # 最終結果の表示
         await self._update_feedback(loading_msg, result_text)
+        
+    def _get_attachment_manager(self, session_id: int) -> AttachmentManager:
+        """
+        セッション別AttachmentManager取得（キャッシュ付き）
+        
+        Args:
+            session_id: セッション番号
+            
+        Returns:
+            AttachmentManager: セッション専用のAttachmentManagerインスタンス
+        """
+        if session_id not in self.attachment_managers:
+            self.attachment_managers[session_id] = AttachmentManager(session_id=session_id)
+            logger.debug(f"Created AttachmentManager for session {session_id}")
+        
+        return self.attachment_managers[session_id]
         
     async def _validate_message(self, message) -> bool:
         """
@@ -252,60 +294,80 @@ class ClaudeCLIBot(commands.Bot):
             logger.error(f'フィードバック送信エラー: {e}')
             return None
             
-    async def _process_message_pipeline(self, message, session_num: int) -> str:
+    async def _process_message_pipeline(self, message, session_id: int) -> str:
         """
-        メッセージ処理パイプライン
+        メッセージ処理パイプライン（マルチセッション対応）
         
         拡張ポイント：
         - 処理ステップの追加
         - 非同期処理の並列化
         - キャッシュ機能
         """
-        # ステップ1: 添付ファイル処理
-        attachment_paths = await self._process_attachments(message, session_num)
+        # ステップ1: セッション別AttachmentManager取得
+        attachment_manager = self._get_attachment_manager(session_id)
         
-        # ステップ2: メッセージフォーマット
+        # ステップ2: 添付ファイル処理
+        attachment_paths = await self._process_attachments(message, session_id, attachment_manager)
+        
+        # ステップ3: メッセージフォーマット
         formatted_message = self.message_processor.format_message_with_attachments(
-            message.content, attachment_paths, session_num
+            message.content, attachment_paths, session_id
         )
         
-        # ステップ3: Claude Codeへの転送
-        return await self._forward_to_claude(formatted_message, message, session_num)
+        # ステップ4: Claude Codeへの転送
+        return await self._forward_to_claude(formatted_message, message, session_id)
         
-    async def _process_attachments(self, message, session_num: int) -> List[str]:
+    async def _process_attachments(self, message, session_id: int, attachment_manager: AttachmentManager) -> List[str]:
         """
-        添付ファイルの処理
+        添付ファイル処理（マルチセッション対応）
         
         拡張ポイント：
         - 新しいファイル形式のサポート
         - ファイル変換処理
         - ウイルススキャン
+        
+        Args:
+            message: Discordメッセージオブジェクト
+            session_id: セッション番号
+            attachment_manager: セッション専用AttachmentManager
+            
+        Returns:
+            List[str]: 処理済み添付ファイルパスのリスト
         """
         attachment_paths = []
         if message.attachments:
             try:
-                attachment_paths = await self.attachment_manager.process_attachments(message.attachments)
+                attachment_paths = await attachment_manager.process_attachments(message.attachments)
                 if attachment_paths:
-                    print(f'📎 Processed {len(attachment_paths)} attachment(s) for session {session_num}')
+                    logger.info(f"Processed {len(attachment_paths)} attachment(s) for session_{session_id}")
             except Exception as e:
-                logger.error(f'Attachment processing error: {e}')
+                logger.error(f"Attachment processing error for session {session_id}: {e}")
         
         return attachment_paths
         
-    async def _forward_to_claude(self, formatted_message: str, original_message, session_num: int) -> str:
+    async def _forward_to_claude(self, formatted_message: str, original_message, session_id: int) -> str:
         """
-        Claude Codeへのメッセージ転送
+        Claude Codeへのメッセージ転送（マルチセッション対応）
         
         拡張ポイント：
         - 複数転送先のサポート
         - 転送失敗時のリトライ
         - 負荷分散
+        - セッション別ルーティング
+        
+        Args:
+            formatted_message: フォーマット済みメッセージ
+            original_message: 元のDiscordメッセージ
+            session_id: セッション番号
+            
+        Returns:
+            str: 転送結果メッセージ
         """
         try:
             payload = {
                 'message': formatted_message,
                 'channel_id': str(original_message.channel.id),
-                'session': session_num,
+                'session': session_id,
                 'user_id': str(original_message.author.id),
                 'username': str(original_message.author)
             }
@@ -317,13 +379,14 @@ class ClaudeCLIBot(commands.Bot):
                 timeout=self.REQUEST_TIMEOUT_SECONDS
             )
             
+            logger.debug(f"Forwarded message to Claude session {session_id} with status {response.status_code}")
             return self._format_response_status(response.status_code)
             
         except requests.exceptions.ConnectionError:
             logger.error("Failed to connect to Flask app. Is it running?")
             return "❌ エラー: Flask appに接続できません"
         except Exception as e:
-            logger.error(f"Error forwarding message: {e}")
+            logger.error(f"Error forwarding message to session {session_id}: {e}")
             return f"❌ エラー: {str(e)[:100]}"
             
     def _format_response_status(self, status_code: int) -> str:
@@ -357,7 +420,7 @@ class ClaudeCLIBot(commands.Bot):
     @tasks.loop(hours=CLEANUP_INTERVAL_HOURS)
     async def cleanup_task(self):
         """
-        定期クリーンアップタスク
+        定期クリーンアップタスク（マルチセッション対応）
         
         拡張ポイント：
         - データベースクリーンアップ
@@ -366,9 +429,34 @@ class ClaudeCLIBot(commands.Bot):
         - システムヘルスチェック
         """
         try:
-            cleanup_count = self.attachment_manager.cleanup_old_files()
-            if cleanup_count > 0:
-                logger.info(f'Automatic cleanup: {cleanup_count} files deleted')
+            total_cleanup_count = 0
+            
+            # 現在設定されている全セッション取得
+            sessions = self.settings.list_sessions()
+            session_ids = [session_num for session_num, _ in sessions]
+            
+            # デフォルトセッション追加（存在しない場合）
+            default_session = self.session_manager.get_default_session()
+            if default_session not in session_ids:
+                session_ids.append(default_session)
+            
+            # 各セッションでクリーンアップ実行
+            for session_id in session_ids:
+                try:
+                    attachment_manager = self._get_attachment_manager(session_id)
+                    cleanup_count = attachment_manager.cleanup_old_files()
+                    total_cleanup_count += cleanup_count
+                    
+                    if cleanup_count > 0:
+                        logger.info(f'Session {session_id} automatic cleanup: {cleanup_count} files deleted')
+                        
+                except Exception as e:
+                    logger.error(f'Error in cleanup task for session {session_id}: {e}')
+                    continue
+            
+            if total_cleanup_count > 0:
+                logger.info(f'Total automatic cleanup: {total_cleanup_count} files deleted across all sessions')
+                
         except Exception as e:
             logger.error(f'Error in cleanup task: {e}')
     
@@ -379,7 +467,7 @@ class ClaudeCLIBot(commands.Bot):
 
 def create_bot_commands(bot: ClaudeCLIBot, settings: SettingsManager):
     """
-    Botコマンドの登録
+    Botコマンドの登録（マルチセッション対応）
     
     拡張ポイント：
     - 新しいコマンドの追加
@@ -389,16 +477,26 @@ def create_bot_commands(bot: ClaudeCLIBot, settings: SettingsManager):
     
     @bot.command(name='status')
     async def status_command(ctx):
-        """Bot状態確認コマンド"""
+        """Bot状態確認コマンド（マルチセッション対応）"""
         sessions = settings.list_sessions()
         embed = discord.Embed(
-            title="Claude CLI Bot Status",
+            title="Claude CLI Bot Status - Multi-Session",
             description="✅ Bot is running",
             color=discord.Color.green()
         )
         
         session_list = "\n".join([f"Session {num}: <#{ch_id}>" for num, ch_id in sessions])
         embed.add_field(name="Active Sessions", value=session_list or "No sessions configured", inline=False)
+        
+        # セッション別添付ファイル統計
+        if sessions:
+            attachment_stats = []
+            for session_num, _ in sessions:
+                attachment_manager = bot._get_attachment_manager(session_num)
+                info = attachment_manager.get_session_attachments_info()
+                attachment_stats.append(f"Session {session_num}: {info['total_files']} files ({info['total_size_mb']}MB)")
+            
+            embed.add_field(name="Attachment Storage", value="\n".join(attachment_stats), inline=False)
         
         await ctx.send(embed=embed)
     
@@ -410,11 +508,87 @@ def create_bot_commands(bot: ClaudeCLIBot, settings: SettingsManager):
             await ctx.send("No sessions configured.")
             return
         
-        lines = ["**Configured Sessions:**"]
-        for num, channel_id in sessions:
-            lines.append(f"Session {num}: <#{channel_id}>")
+        embed = discord.Embed(
+            title="Configured Sessions",
+            color=discord.Color.blue()
+        )
         
-        await ctx.send("\n".join(lines))
+        # セッション詳細情報
+        for session_num, channel_id in sessions:
+            attachment_manager = bot._get_attachment_manager(session_num)
+            info = attachment_manager.get_session_attachments_info()
+            
+            embed.add_field(
+                name=f"Session {session_num}",
+                value=f"Channel: <#{channel_id}>\nFiles: {info['total_files']} ({info['total_size_mb']}MB)\nStatus: {info['storage_status']}",
+                inline=True
+            )
+        
+        await ctx.send(embed=embed)
+    
+    @bot.command(name='session-info')
+    async def session_info_command(ctx, session_id: int = None):
+        """セッション詳細情報表示コマンド"""
+        if session_id is None:
+            # 現在のチャンネルのセッション情報取得
+            session_id = bot.session_manager.get_session_by_channel(str(ctx.channel.id))
+            if session_id is None:
+                session_id = bot.session_manager.get_default_session()
+        
+        # セッション存在確認
+        sessions = settings.list_sessions()
+        session_exists = any(num == session_id for num, _ in sessions)
+        
+        if not session_exists and session_id != bot.session_manager.get_default_session():
+            await ctx.send(f"❌ Session {session_id} not found.")
+            return
+        
+        # 添付ファイル情報取得
+        attachment_manager = bot._get_attachment_manager(session_id)
+        info = attachment_manager.get_session_attachments_info()
+        
+        embed = discord.Embed(
+            title=f"Session {session_id} Details",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(name="Session ID", value=str(session_id), inline=True)
+        embed.add_field(name="Storage Directory", value=info['directory'], inline=False)
+        embed.add_field(name="Total Files", value=str(info['total_files']), inline=True)
+        embed.add_field(name="Total Size", value=f"{info['total_size_mb']}MB", inline=True)
+        embed.add_field(name="Status", value=info['storage_status'], inline=True)
+        
+        if info.get('last_updated'):
+            embed.add_field(name="Last Updated", value=info['last_updated'], inline=False)
+        
+        await ctx.send(embed=embed)
+    
+    @bot.command(name='cleanup')
+    async def cleanup_command(ctx, session_id: int = None):
+        """手動クリーンアップコマンド"""
+        if session_id is None:
+            # 全セッションクリーンアップ
+            sessions = settings.list_sessions()
+            session_ids = [session_num for session_num, _ in sessions]
+            
+            # デフォルトセッション追加
+            default_session = bot.session_manager.get_default_session()
+            if default_session not in session_ids:
+                session_ids.append(default_session)
+            
+            total_cleanup_count = 0
+            for sid in session_ids:
+                attachment_manager = bot._get_attachment_manager(sid)
+                cleanup_count = attachment_manager.cleanup_old_files()
+                total_cleanup_count += cleanup_count
+            
+            await ctx.send(f"🧹 Manual cleanup completed: {total_cleanup_count} files deleted across all sessions")
+            
+        else:
+            # 特定セッションクリーンアップ
+            attachment_manager = bot._get_attachment_manager(session_id)
+            cleanup_count = attachment_manager.cleanup_old_files()
+            await ctx.send(f"🧹 Session {session_id} cleanup completed: {cleanup_count} files deleted")
 
 def run_bot():
     """

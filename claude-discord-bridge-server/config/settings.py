@@ -14,29 +14,12 @@ class SettingsManager:
     """設定の読み込み、保存、管理を行うクラス"""
     
     def __init__(self):
-        # Support both old and new config directory names for backward compatibility
-        old_config_dir = Path.home() / '.claude-cli-toolkit'
-        new_config_dir = Path.home() / '.claude-discord-bridge'
-        
-        # Migrate from old to new if old exists and new doesn't
-        if old_config_dir.exists() and not new_config_dir.exists():
-            try:
-                old_config_dir.rename(new_config_dir)
-                print(f"📦 Migrated config directory: {old_config_dir} → {new_config_dir}")
-            except Exception as e:
-                print(f"⚠️  Failed to migrate config directory: {e}")
-                print(f"Using existing: {old_config_dir}")
-                self.config_dir = old_config_dir
-                self.env_file = self.config_dir / '.env'
-                self.sessions_file = self.config_dir / 'sessions.json'
-                self.toolkit_root = Path(__file__).parent.parent
-                return
-        
-        # Use new config directory (either migrated or new installation)
-        self.config_dir = new_config_dir if new_config_dir.exists() or not old_config_dir.exists() else old_config_dir
-        self.env_file = self.config_dir / '.env'
-        self.sessions_file = self.config_dir / 'sessions.json'
+        # Use current script directory as config directory for Codespaces deployment
         self.toolkit_root = Path(__file__).parent.parent
+        self.config_dir = self.toolkit_root
+        # .envファイルはプロジェクトルートから読み込み
+        self.env_file = self.toolkit_root.parent / '.env'
+        self.sessions_file = self.config_dir / 'sessions.json'
         
     def ensure_config_dir(self):
         """設定ディレクトリを作成"""
@@ -67,11 +50,36 @@ class SettingsManager:
         os.chmod(self.env_file, 0o600)
     
     def load_sessions(self) -> Dict[str, str]:
-        """セッション設定を読み込み"""
-        if self.sessions_file.exists():
-            with open(self.sessions_file, 'r') as f:
-                return json.load(f)
-        return {}
+        """セッション設定を読み込み（環境変数から動的に取得）"""
+        # 既存のload_env()メソッドを活用
+        env_vars = self.load_env()
+        
+        # 環境変数からセッション設定を構築
+        sessions = {}
+        
+        # Session 1: メインチャンネル
+        main_channel = env_vars.get('CC_DISCORD_CHANNEL_ID_002')
+        if main_channel:
+            sessions['1'] = main_channel
+            
+        # Session 2: チャンネルB
+        channel_b = env_vars.get('CC_DISCORD_CHANNEL_ID_002_B')
+        if channel_b:
+            sessions['2'] = channel_b
+            
+        # Session 3: チャンネルC
+        channel_c = env_vars.get('CC_DISCORD_CHANNEL_ID_002_C')
+        if channel_c:
+            sessions['3'] = channel_c
+            
+        # Session 4: 将来拡張用（環境変数があれば設定）
+        channel_d = env_vars.get('CC_DISCORD_CHANNEL_ID_002_D')
+        if channel_d:
+            sessions['4'] = channel_d
+        else:
+            sessions['4'] = ""
+            
+        return sessions
     
     def save_sessions(self, sessions: Dict[str, str]):
         """セッション設定を保存"""
@@ -82,7 +90,7 @@ class SettingsManager:
     def get_token(self) -> Optional[str]:
         """Discord bot tokenを取得"""
         env_vars = self.load_env()
-        return env_vars.get('DISCORD_BOT_TOKEN')
+        return env_vars.get('CC_DISCORD_TOKEN')
     
     def set_token(self, token: str):
         """Discord bot tokenを設定"""
