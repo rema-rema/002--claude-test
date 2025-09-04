@@ -1,10 +1,75 @@
+# Dependencies
 node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment variables
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+!.env.example
+
+# Logs
 *.log
+logs/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Build outputs
 dist/
+build/
+.next/
+out/
+
+# Python specific
+*.egg-info/
+.pytest_cache/
+.coverage
+.tox/
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.sqlite3
+
+# Docker
+.dockerignore
 
 # Playwright
 /test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Account Management - Security Credentials (NEVER COMMIT)
+account-management/development/
+account-management/staging/
+account-management/production/
+account-management/**/*.md
+account-management/**/*.sh
+account-management/**/*.json
+account-management/**/*.yaml
+account-management/**/*.yml
+!account-management/README.md
+!account-management/templates/

@@ -3,7 +3,7 @@
 ## 📁 **ディレクトリ構成**
 
 ```
-spec/kairo/discord-approval-system/
+dev_tools/spec/kairo/discord-approval-system/
 ├── README.md                           # このファイル（全体ガイド）
 ├── requirements.md                     # プロジェクト要件定義
 ├── design.md                          # アーキテクチャ・技術設計

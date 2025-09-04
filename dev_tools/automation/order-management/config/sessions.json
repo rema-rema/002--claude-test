@@ -1,0 +1,99 @@
+{
+  "sessions": [
+    {
+      "session_id": "supreme",
+      "role": "supreme",
+      "status": "idle",
+      "parent_id": null,
+      "children_ids": [
+        "coordinator"
+      ],
+      "capabilities": {
+        "can_implement": false,
+        "can_review": true,
+        "can_test": false,
+        "can_deploy": true,
+        "can_manage": true,
+        "specializations": [
+          "decision_making",
+          "strategy"
+        ]
+      },
+      "created_at": "2025-08-29T19:29:31.327342",
+      "last_active": "2025-08-29T19:29:31.327346",
+      "current_task": null,
+      "metadata": {}
+    },
+    {
+      "session_id": "coordinator",
+      "role": "coordinator",
+      "status": "idle",
+      "parent_id": "supreme",
+      "children_ids": [
+        "manager"
+      ],
+      "capabilities": {
+        "can_implement": true,
+        "can_review": true,
+        "can_test": true,
+        "can_deploy": false,
+        "can_manage": true,
+        "specializations": [
+          "coordination",
+          "planning"
+        ]
+      },
+      "created_at": "2025-08-29T19:29:31.328445",
+      "last_active": "2025-08-29T19:29:31.328452",
+      "current_task": null,
+      "metadata": {}
+    },
+    {
+      "session_id": "manager",
+      "role": "manager",
+      "status": "idle",
+      "parent_id": "coordinator",
+      "children_ids": [
+        "worker"
+      ],
+      "capabilities": {
+        "can_implement": true,
+        "can_review": true,
+        "can_test": true,
+        "can_deploy": false,
+        "can_manage": true,
+        "specializations": [
+          "task_management",
+          "quality_control"
+        ]
+      },
+      "created_at": "2025-08-29T19:29:31.330049",
+      "last_active": "2025-08-29T19:29:31.330055",
+      "current_task": null,
+      "metadata": {}
+    },
+    {
+      "session_id": "worker",
+      "role": "worker",
+      "status": "idle",
+      "parent_id": "manager",
+      "children_ids": [],
+      "capabilities": {
+        "can_implement": true,
+        "can_review": true,
+        "can_test": true,
+        "can_deploy": false,
+        "can_manage": false,
+        "specializations": [
+          "coding",
+          "testing"
+        ]
+      },
+      "created_at": "2025-08-29T19:29:31.331612",
+      "last_active": "2025-08-29T19:29:31.331616",
+      "current_task": null,
+      "metadata": {}
+    }
+  ],
+  "updated_at": "2025-08-29T19:29:31.331632"
+}

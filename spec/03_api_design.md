@@ -1,206 +1,352 @@
 # API設計書
 
-## 1. 概要
+## 1. API設計方針
 
-### 1.1 現在の実装状況
-本APIは基本的なAIチャット機能を提供する最小限の実装です。将来的な拡張を考慮した設計方針を含みます。
+### 1.1 設計思想
+本システムのAPIは**RESTful設計**と**OpenAPI 3.0準拠**を基本とし、以下の原則に従います：
 
-### 1.2 ベースURL
+- **一貫性**: 統一されたURL構造とレスポンス形式
+- **予測可能性**: 直感的なエンドポイント命名
+- **拡張性**: バージョニングによる後方互換性
+- **ドキュメント自動生成**: FastAPIによるOpenAPI仕様書自動生成
+
+### 1.2 技術仕様
+- **フレームワーク**: FastAPI (Python 3.11+)
+- **バリデーション**: Pydantic v2
+- **非同期処理**: async/await標準対応
+- **ドキュメント**: Swagger UI / ReDoc自動生成
+
+### 1.3 ベースURL
 ```
-開発環境: http://localhost:5000
-本番環境: https://ai-chat-proto.fly.dev
+開発環境: http://localhost:8000
+本番環境: https://api.example.com
 ```
 
-### 1.3 認証方式（現在実装済み）
-- **Access Token**: 環境変数ACCESS_TOKENによる簡易認証（オプション）
-- **OpenAI API Key**: サーバーサイドで管理
+## 2. API標準仕様
 
-## 2. 現在の実装仕様
+### 2.1 URL設計規約
+```
+/api/v{version}/{resource}/{resource_id}/{sub_resource}
 
-### 2.1 リクエストヘッダー
-```http
-Content-Type: application/json
-Authorization: Bearer <access_token>  # オプション（ACCESS_TOKEN設定時のみ）
+例：
+/api/v1/users
+/api/v1/users/123
+/api/v1/users/123/sessions
 ```
 
-### 2.2 レスポンス形式（現在の実装）
+### 2.2 HTTPメソッド規約
+| メソッド | 用途 | 冪等性 |
+|---------|------|--------|
+| GET | リソース取得 | Yes |
+| POST | リソース作成 | No |
+| PUT | リソース全体更新 | Yes |
+| PATCH | リソース部分更新 | Yes |
+| DELETE | リソース削除 | Yes |
 
-#### 2.2.1 成功レスポンス例
+### 2.3 レスポンス形式
+
+#### 成功レスポンス
 ```json
 {
-  "response": "AI応答内容",
-  "status": "success"
-}
-```
-
-#### 2.2.2 エラーレスポンス例
-```json
-{
-  "error": "エラーメッセージ"
-}
-```
-
-### 2.3 HTTPステータスコード（現在使用中）
-- `200 OK`: 成功
-- `400 Bad Request`: リクエストエラー
-- `401 Unauthorized`: 認証エラー
-- `404 Not Found`: エンドポイント未発見
-- `429 Too Many Requests`: OpenAI APIレート制限
-- `500 Internal Server Error`: サーバーエラー
-
-## 3. 現在実装済みエンドポイント
-
-### 3.1 ヘルスチェック
-
-#### GET /health
-システムの稼働状況を確認
-
-**リクエスト**
-```http
-GET /health
-```
-
-**レスポンス（実際の形式）**
-```json
-{
-  "status": "healthy",
-  "service": "AI Chat Backend"
-}
-```
-
-### 3.2 チャット機能
-
-#### POST /api/chat
-AIとのチャット処理（メイン機能）
-
-**リクエスト（実際の形式）**
-```http
-POST /api/chat
-Authorization: Bearer <access_token>  # ACCESS_TOKEN設定時のみ必須
-Content-Type: application/json
-
-{
-  "message": "こんにちは",
-  "history": [
-    {
-      "role": "user",
-      "content": "前回の質問"
+    "success": true,
+    "data": {
+        // リソースデータ
     },
-    {
-      "role": "assistant", 
-      "content": "前回の回答"
+    "meta": {
+        "timestamp": "2025-08-29T10:00:00Z",
+        "request_id": "req_123456"
     }
-  ]
 }
 ```
 
-**レスポンス（実際の形式）**
+#### エラーレスポンス
 ```json
 {
-  "response": "こんにちは！何かお手伝いできることはありますか？",
-  "status": "success"
+    "success": false,
+    "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "入力値が不正です",
+        "details": [
+            {
+                "field": "email",
+                "message": "有効なメールアドレスを入力してください"
+            }
+        ]
+    },
+    "meta": {
+        "timestamp": "2025-08-29T10:00:00Z",
+        "request_id": "req_123456"
+    }
 }
 ```
 
-**エラーレスポンス例（実際の形式）**
+### 2.4 ステータスコード
+
+| コード | 意味 | 使用場面 |
+|--------|------|----------|
+| 200 | OK | GET/PUT/PATCH成功 |
+| 201 | Created | POST成功（リソース作成） |
+| 204 | No Content | DELETE成功 |
+| 400 | Bad Request | バリデーションエラー |
+| 401 | Unauthorized | 認証エラー |
+| 403 | Forbidden | 認可エラー |
+| 404 | Not Found | リソース不存在 |
+| 409 | Conflict | リソース競合 |
+| 422 | Unprocessable Entity | ビジネスロジックエラー |
+| 429 | Too Many Requests | レート制限 |
+| 500 | Internal Server Error | サーバーエラー |
+
+## 3. 認証・認可
+
+### 3.1 認証方式
+```http
+Authorization: Bearer {jwt_token}
+```
+
+### 3.2 JWT構造
 ```json
 {
-  "error": "OpenAI API rate limit exceeded"
+    "sub": "user_id",
+    "email": "user@example.com",
+    "roles": ["user"],
+    "exp": 1234567890,
+    "iat": 1234567800,
+    "jti": "unique_token_id"
 }
 ```
 
-### 3.3 静的ファイル配信
+### 3.3 認証フロー
+```mermaid
+sequenceDiagram
+    Client->>API: POST /api/v1/auth/login
+    API->>Client: JWT Token (HTTPOnly Cookie)
+    Client->>API: GET /api/v1/users/me (Cookie自動送信)
+    API->>Client: User Data
+```
 
-#### GET / および GET /<path:path>
-Next.js静的ファイルの配信（SPA対応）
+## 4. 共通エンドポイント仕様
 
-**機能**
-- Next.jsビルド結果の配信
-- 存在しないパスは全てindex.htmlにフォールバック
-- SPA（Single Page Application）ルーティング対応
+### 4.1 ヘルスチェック
+```
+GET /health
 
-## 4. 将来拡張予定のエンドポイント
+Response:
+{
+    "status": "healthy",
+    "version": "1.0.0",
+    "timestamp": "2025-08-29T10:00:00Z"
+}
+```
 
-### 4.1 認証機能（フェーズ2予定）
-- `POST /api/auth/login` - OAuth認証
-- `POST /api/auth/refresh` - トークンリフレッシュ
-- `POST /api/auth/logout` - ログアウト
+### 4.2 OpenAPI仕様書
+```
+GET /openapi.json  # JSON形式
+GET /docs          # Swagger UI
+GET /redoc         # ReDoc
+```
 
-### 4.2 セッション管理（フェーズ3予定）
-- `GET /api/sessions` - セッション一覧
-- `POST /api/sessions` - セッション作成
-- `GET /api/sessions/{id}` - セッション詳細
-- `PUT /api/sessions/{id}` - セッション更新
-- `DELETE /api/sessions/{id}` - セッション削除
+## 5. データ形式
 
-### 4.3 メッセージ管理（フェーズ3予定）
-- `GET /api/sessions/{id}/messages` - メッセージ履歴
-- `POST /api/sessions/{id}/messages` - メッセージ送信
+### 5.1 日時形式
+- **形式**: ISO 8601 (UTC)
+- **例**: `2025-08-29T10:00:00Z`
 
-### 4.4 ユーザー管理（フェーズ4予定）
-- `GET /api/user/profile` - プロフィール取得
-- `PUT /api/user/profile` - プロフィール更新
-- `GET /api/user/usage` - 使用量統計
+### 5.2 ID形式
+- **形式**: UUID v4
+- **例**: `123e4567-e89b-12d3-a456-426614174000`
 
-## 5. 現在のエラーハンドリング
+### 5.3 ページネーション
+```json
+{
+    "data": [...],
+    "pagination": {
+        "page": 1,
+        "per_page": 20,
+        "total_pages": 5,
+        "total_items": 100,
+        "has_next": true,
+        "has_prev": false
+    }
+}
+```
 
-### 5.1 実装済みエラー処理
-- **400 Bad Request**: `{"error": "Message is required"}`
-- **401 Unauthorized**: `{"error": "Unauthorized"}` または `{"error": "Invalid OpenAI API key"}`
-- **404 Not Found**: `{"error": "Endpoint not found"}`
-- **429 Too Many Requests**: `{"error": "OpenAI API rate limit exceeded"}`
-- **500 Internal Server Error**: `{"error": "OpenAI API error: ..."}`または`{"error": "Internal server error: ..."}`
+### 5.4 ソート・フィルタリング
+```
+GET /api/v1/users?sort=-created_at&filter[status]=active&page=1&per_page=20
 
-### 5.2 リファクタリング予定
-- エラーレスポンス形式の統一
-- エラーコード体系の導入
-- 詳細なエラー情報の提供
+sort: フィールド名（-で降順）
+filter[field]: フィルタ値
+page: ページ番号
+per_page: 1ページあたりの件数
+```
 
-## 6. 将来拡張予定機能
+## 6. エラーハンドリング
 
-### 6.1 レート制限（フェーズ2予定）
-- アプリケーションレベルでのレート制限実装
-- ユーザー別・IP別制限
-- レート制限ヘッダーの追加
+### 6.1 エラーコード体系
+```python
+# エラーコード形式: {CATEGORY}_{SPECIFIC_ERROR}
 
-### 6.2 ページネーション（フェーズ3予定）
-- セッション一覧・メッセージ履歴での実装
-- 標準的なページネーション形式
+VALIDATION_ERROR     # 入力検証エラー
+AUTH_FAILED         # 認証失敗
+PERMISSION_DENIED   # 権限不足
+NOT_FOUND          # リソース不存在
+CONFLICT           # データ競合
+RATE_LIMIT         # レート制限
+INTERNAL_ERROR     # 内部エラー
+```
 
-### 6.3 検索・フィルタリング（フェーズ4予定）
-- セッション検索機能
-- メッセージ内容検索
-- 日付範囲フィルタ
+### 6.2 バリデーションエラー詳細
+```python
+# Pydantic によるバリデーション
+from pydantic import BaseModel, EmailStr, Field
 
-### 6.4 WebSocket API（フェーズ5予定）
-- リアルタイムチャット
-- ストリーミング応答
-- 接続状態管理
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=100)
+    name: str = Field(min_length=1, max_length=100)
+```
 
-## 7. 現在の技術的制約
+## 7. セキュリティ
 
-### 7.1 制約事項
-- セッション管理なし（ブラウザ内のみ）
-- ユーザー認証なし（ACCESS_TOKENのみ）
-- データ永続化なし
-- レート制限なし（OpenAI API依存）
+### 7.1 CORS設定
+```python
+# FastAPI CORS設定
+from fastapi.middleware.cors import CORSMiddleware
 
-### 7.2 リファクタリング・改善タスク
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://example.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
 
-#### 7.2.1 コード整理タスク
-- [ ] エラーレスポンス形式の統一
-- [ ] バリデーション処理の共通化
-- [ ] OpenAI API呼び出しの関数化
-- [ ] 設定値の外部化（モデル、温度等）
+### 7.2 レート制限
+```python
+# Redis ベースのレート制限
+rate_limit = "100/hour"  # 1時間あたり100リクエスト
+```
 
-#### 7.2.2 機能改善タスク
-- [ ] リクエストログの詳細化
-- [ ] エラーハンドリングの強化
-- [ ] レスポンス時間の監視
-- [ ] ヘルスチェックの詳細化
+### 7.3 入力サニタイゼーション
+- SQLインジェクション: SQLAlchemy ORM使用
+- XSS: HTMLエスケープ処理
+- パストラバーサル: パス検証
 
-#### 7.2.3 セキュリティ強化タスク
-- [ ] 入力値検証の強化
-- [ ] CORS設定の最適化
-- [ ] セキュリティヘッダーの追加
-- [ ] APIキー管理の改善
+## 8. 非同期処理
+
+### 8.1 長時間処理
+```python
+# Celery タスクによる非同期処理
+POST /api/v1/tasks/heavy-process
+
+Response:
+{
+    "task_id": "abc-123",
+    "status": "pending",
+    "status_url": "/api/v1/tasks/abc-123/status"
+}
+```
+
+### 8.2 WebSocket（リアルタイム通信）
+```python
+# WebSocket エンドポイント
+ws://localhost:8000/ws/{client_id}
+
+# メッセージ形式
+{
+    "type": "notification",
+    "data": {...}
+}
+```
+
+## 9. API実装例（FastAPI）
+
+### 9.1 基本的なCRUD実装
+```python
+from fastapi import FastAPI, HTTPException, Depends
+from typing import List
+from pydantic import BaseModel
+
+app = FastAPI(title="MyApp API", version="1.0.0")
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+
+@app.get("/api/v1/users", response_model=List[UserResponse])
+async def get_users(
+    page: int = 1,
+    per_page: int = 20,
+    db: Session = Depends(get_db)
+):
+    """ユーザー一覧取得"""
+    users = db.query(User).offset((page-1)*per_page).limit(per_page).all()
+    return users
+
+@app.post("/api/v1/users", status_code=201)
+async def create_user(
+    user: UserCreate,
+    db: Session = Depends(get_db)
+):
+    """ユーザー作成"""
+    db_user = User(**user.dict())
+    db.add(db_user)
+    db.commit()
+    return {"id": db_user.id}
+```
+
+## 10. テスト仕様
+
+### 10.1 APIテスト
+```python
+# pytest によるAPIテスト
+def test_create_user(client):
+    response = client.post(
+        "/api/v1/users",
+        json={"email": "test@example.com", "password": "password123"}
+    )
+    assert response.status_code == 201
+    assert "id" in response.json()
+```
+
+### 10.2 負荷テスト
+```bash
+# Locust による負荷テスト
+locust -f locustfile.py --host=http://localhost:8000
+```
+
+## 11. 機能別API仕様への参照
+
+各機能の詳細なAPI仕様は、機能別設計書を参照してください：
+
+- [ログイン機能のAPI](/dev_tools/spec/kairo/login/design.md#api設計)
+- [その他機能のAPI](/dev_tools/spec/kairo/[機能名]/design.md)
+
+**注**: 本書では全体的なAPI設計標準と共通仕様を定義しています。各機能固有のエンドポイント定義や詳細な実装は、それぞれの機能別設計書に記載されます。
+
+## 12. API移行戦略
+
+### 12.1 バージョニング戦略
+```
+/api/v1/... → 現行バージョン
+/api/v2/... → 次期バージョン（非互換変更時）
+```
+
+### 12.2 廃止予定API
+```http
+Deprecation: true
+Sunset: 2025-12-31
+Link: <https://api.example.com/docs/migration>; rel="deprecation"
+```
+
+### 12.3 移行期間
+- 新バージョンリリース後、最低6ヶ月は旧バージョンサポート
+- 廃止3ヶ月前から警告ヘッダー送信
+
+---
+
+**最終更新日**: 2025-08-29  
+**バージョン**: 2.0.0  
+**ステータス**: 確定

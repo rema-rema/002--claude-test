@@ -22,7 +22,7 @@ Taskツールで以下のファイルを並列読み込み:
    - 予定テストケース、分類、期待値を把握
 
 4. プロジェクト設計文書の確認（存在する場合）
-   - `docs/spec/{feature_name}-requirements.md` (EARS要件定義書)
+   - `spec/{feature_name}-requirements.md` (EARS要件定義書)
    - `docs/design/{feature_name}/architecture.md`
    - `docs/design/{feature_name}/interfaces.ts`
    - `docs/design/{feature_name}/api-endpoints.md`

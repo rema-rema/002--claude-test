@@ -156,8 +156,8 @@ async function initializeApprovalChannels(channels) {
 - [ ] 既存エラーハンドリングとの段階的統合
 
 ### 📚 **参考ドキュメント**
-- **統合ガイド**: `spec/kairo/discord-approval-system/implementation/TASK-302/integration-samples.md`
-- **API仕様**: `spec/kairo/discord-approval-system/implementation/TASK-302/export-interface.md`
+- **統合ガイド**: `dev_tools/spec/kairo/discord-approval-system/implementation/TASK-302/integration-samples.md`
+- **API仕様**: `dev_tools/spec/kairo/discord-approval-system/implementation/TASK-302/export-interface.md`
 - **実装サンプル**: 上記ファイル内に完備
 
 ---

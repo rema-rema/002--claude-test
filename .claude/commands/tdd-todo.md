@@ -5,7 +5,7 @@
 - `docs/tasks/{要件名}-tasks.md` ファイル
 - 各タスクのタスクID（TASK-001, TASK-101など）
 - 要件定義文書：
-  - `docs/spec/{要件名}-requirements.md`
+  - `spec/{要件名}-requirements.md`
 - 設計文書群：
   - `docs/design/{要件名}/architecture.md`
   - `docs/design/{要件名}/database-schema.sql`

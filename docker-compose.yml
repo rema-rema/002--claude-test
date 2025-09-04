@@ -1,0 +1,235 @@
+version: '3.8'
+
+services:
+  # ===================
+  # Session A Environment (formerly Session 1)
+  # ===================
+  postgres-session-a:
+    image: postgres:15-alpine
+    container_name: postgres-session-a
+    ports:
+      - "5401:5432"
+    environment:
+      POSTGRES_DB: session_a_dev
+      POSTGRES_USER: session_a_user
+      POSTGRES_PASSWORD: session_a_pass123
+    volumes:
+      - postgres_session_a_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U session_a_user -d session_a_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis-session-a:
+    image: redis:7-alpine
+    container_name: redis-session-a
+    ports:
+      - "6401:6379"
+    volumes:
+      - redis_session_a_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ===================
+  # Session B Environment (formerly Session 2)
+  # ===================
+  postgres-session-b:
+    image: postgres:15-alpine
+    container_name: postgres-session-b
+    ports:
+      - "5402:5432"
+    environment:
+      POSTGRES_DB: session_b_dev
+      POSTGRES_USER: session_b_user
+      POSTGRES_PASSWORD: session_b_pass123
+    volumes:
+      - postgres_session_b_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U session_b_user -d session_b_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis-session-b:
+    image: redis:7-alpine
+    container_name: redis-session-b
+    ports:
+      - "6402:6379"
+    volumes:
+      - redis_session_b_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ===================
+  # Session C Environment (formerly Session 3)
+  # ===================
+  postgres-session-c:
+    image: postgres:15-alpine
+    container_name: postgres-session-c
+    ports:
+      - "5403:5432"
+    environment:
+      POSTGRES_DB: session_c_dev
+      POSTGRES_USER: session_c_user
+      POSTGRES_PASSWORD: session_c_pass123
+    volumes:
+      - postgres_session_c_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U session_c_user -d session_c_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis-session-c:
+    image: redis:7-alpine
+    container_name: redis-session-c
+    ports:
+      - "6403:6379"
+    volumes:
+      - redis_session_c_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ===================
+  # Session D Environment (formerly Session 4)
+  # ===================
+  postgres-session-d:
+    image: postgres:15-alpine
+    container_name: postgres-session-d
+    ports:
+      - "5404:5432"
+    environment:
+      POSTGRES_DB: session_d_dev
+      POSTGRES_USER: session_d_user
+      POSTGRES_PASSWORD: session_d_pass123
+    volumes:
+      - postgres_session_d_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U session_d_user -d session_d_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis-session-d:
+    image: redis:7-alpine
+    container_name: redis-session-d
+    ports:
+      - "6404:6379"
+    volumes:
+      - redis_session_d_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ===================
+  # Staging Environment
+  # ===================
+  postgres-staging:
+    image: postgres:15-alpine
+    container_name: postgres-staging
+    ports:
+      - "5405:5432"
+    environment:
+      POSTGRES_DB: staging_db
+      POSTGRES_USER: staging_user
+      POSTGRES_PASSWORD: staging_secure456
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U staging_user -d staging_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis-staging:
+    image: redis:7-alpine
+    container_name: redis-staging
+    ports:
+      - "6405:6379"
+    volumes:
+      - redis_staging_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ===================
+  # Database Administration Tools
+  # ===================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    ports:
+      - "8080:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres-session-a
+      - postgres-session-b
+      - postgres-session-c
+      - postgres-session-d
+      - postgres-staging
+    restart: unless-stopped
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOSTS: "session-a:redis-session-a:6379,session-b:redis-session-b:6379,session-c:redis-session-c:6379,session-d:redis-session-d:6379,staging:redis-staging:6379"
+    depends_on:
+      - redis-session-a
+      - redis-session-b
+      - redis-session-c
+      - redis-session-d
+      - redis-staging
+    restart: unless-stopped
+
+volumes:
+  postgres_session_a_data:
+  redis_session_a_data:
+  postgres_session_b_data:
+  redis_session_b_data:
+  postgres_session_c_data:
+  redis_session_c_data:
+  postgres_session_d_data:
+  redis_session_d_data:
+  postgres_staging_data:
+  redis_staging_data:
+  pgadmin_data:
+
+networks:
+  default:
+    name: claude-development-network

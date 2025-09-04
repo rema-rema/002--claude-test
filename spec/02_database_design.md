@@ -1,491 +1,362 @@
 # データベース設計書
 
-## 1. 概要
+## 1. データベース全体方針
 
-### 1.1 データベース選択理由
-- **Supabase（PostgreSQL）**: 東京リージョン対応、認証機能統合、リアルタイム機能
-- **開発効率**: REST API自動生成、TypeScript型定義自動生成
-- **拡張性**: PostgreSQLベースで高度なクエリ対応
-- **コスト**: 無料枠から段階的スケーリング可能
+### 1.1 設計思想
+本システムのデータベース設計は、**柔軟性と堅牢性の両立**を目指し、以下の原則に従います：
 
-### 1.2 設計原則
-- **正規化**: 第3正規形まで適用
-- **パフォーマンス**: 適切なインデックス設計
-- **拡張性**: 将来の機能追加を考慮
-- **セキュリティ**: Row Level Security (RLS) 活用
+- **ハイブリッド型データ管理**: 構造化データ（リレーショナル）と非構造化データ（JSONB）の適材適所
+- **スキーマ進化への対応**: マイグレーション容易性とダウンタイム最小化
+- **パフォーマンス最適化**: 適切なインデックス戦略とキャッシュ活用
+- **データ整合性**: トランザクション管理とバリデーション
 
-## 2. ER図
+### 1.2 データストア構成
 
-```mermaid
-erDiagram
-    users {
-        uuid id PK
-        string email UK
-        string display_name
-        string avatar_url
-        string auth_provider
-        string auth_provider_id
-        timestamp created_at
-        timestamp updated_at
-        boolean is_active
-        jsonb metadata
+#### PostgreSQL（メインデータベース）
+- **用途**: トランザクショナルデータ、マスターデータ
+- **バージョン**: 15以上
+- **特徴**: JSONB型による柔軟なスキーマ対応
+
+#### Redis（キャッシュ・セッション）
+- **用途**: セッション管理、キャッシュ、タスクキュー
+- **バージョン**: 7以上
+- **永続化**: AOF（Append Only File）有効
+
+#### ローカルファイルシステム
+- **用途**: アップロードファイル、静的コンテンツ
+- **構造**: 階層型ディレクトリ管理
+- **将来**: S3互換ストレージへの移行可能
+
+## 2. PostgreSQL設計詳細
+
+### 2.1 データベース構造
+```sql
+-- データベース作成
+CREATE DATABASE myapp
+    WITH 
+    OWNER = postgres
+    ENCODING = 'UTF8'
+    LC_COLLATE = 'ja_JP.UTF-8'
+    LC_CTYPE = 'ja_JP.UTF-8'
+    TABLESPACE = pg_default
+    CONNECTION LIMIT = -1;
+
+-- 拡張機能
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+```
+
+### 2.2 共通カラム定義
+すべてのテーブルに含まれる共通カラム：
+```sql
+id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+created_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+updated_at  TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+deleted_at  TIMESTAMP WITH TIME ZONE DEFAULT NULL  -- 論理削除
+```
+
+### 2.3 テーブル定義参照
+
+各テーブルの詳細定義は、個別のスキーマ定義ファイルを参照してください：
+
+| テーブル名 | 用途 | 詳細定義 |
+|-----------|------|----------|
+| `users` | ユーザー基本情報・プロフィール管理 | [users.md](./02_database_schemas/users.md) |
+| `auth_providers` | OAuth認証プロバイダー情報管理 | [auth_providers.md](./02_database_schemas/auth_providers.md) |
+| `sessions` | セッション・JWT管理 | [sessions.md](./02_database_schemas/sessions.md) |
+
+### 2.4 テーブル関係図
+全体のER図とテーブル関係については以下を参照：
+- [ER図・リレーション定義](.//02_database_schemas/_relations.md)
+
+### 2.4 JSONB活用パターン
+
+#### パターン1: ユーザープロファイル
+```sql
+-- プロファイルJSONB構造例
+{
+    "name": {
+        "first": "太郎",
+        "last": "田中",
+        "display": "田中太郎"
+    },
+    "avatar": "https://example.com/avatar.jpg",
+    "bio": "エンジニア",
+    "social": {
+        "twitter": "@example",
+        "github": "example"
+    },
+    "custom_fields": {
+        "department": "開発部",
+        "employee_id": "EMP001"
     }
-    
-    chat_sessions {
-        uuid id PK
-        uuid user_id FK
-        string title
-        timestamp created_at
-        timestamp updated_at
-        boolean is_archived
-        jsonb settings
+}
+
+-- クエリ例
+SELECT * FROM users WHERE profile->>'bio' LIKE '%エンジニア%';
+SELECT * FROM users WHERE profile->'social'->>'twitter' IS NOT NULL;
+```
+
+#### パターン2: 設定・プリファレンス
+```sql
+-- プリファレンスJSONB構造例
+{
+    "theme": "dark",
+    "language": "ja",
+    "notifications": {
+        "email": true,
+        "push": false,
+        "frequency": "daily"
+    },
+    "ui": {
+        "sidebar_collapsed": false,
+        "grid_view": true
     }
-    
-    messages {
-        uuid id PK
-        uuid session_id FK
-        string role
-        text content
-        timestamp created_at
-        jsonb metadata
-        integer token_count
-    }
-    
-    user_subscriptions {
-        uuid id PK
-        uuid user_id FK
-        string stripe_subscription_id UK
-        string status
-        string plan_type
-        timestamp current_period_start
-        timestamp current_period_end
-        timestamp created_at
-        timestamp updated_at
-    }
-    
-    usage_logs {
-        uuid id PK
-        uuid user_id FK
-        uuid session_id FK
-        uuid message_id FK
-        integer tokens_used
-        decimal cost
-        timestamp created_at
-        string model_used
-    }
-    
-    users ||--o{ chat_sessions : "has"
-    users ||--o| user_subscriptions : "has"
-    users ||--o{ usage_logs : "generates"
-    chat_sessions ||--o{ messages : "contains"
-    chat_sessions ||--o{ usage_logs : "tracks"
-    messages ||--o| usage_logs : "logged"
+}
+
+-- 更新例
+UPDATE users 
+SET preferences = jsonb_set(preferences, '{theme}', '"light"')
+WHERE id = ?;
 ```
 
-## 3. テーブル定義
+### 2.5 マイグレーション戦略
 
-### 3.1 users テーブル
-ユーザー基本情報を管理
+#### Alembicによる自動マイグレーション
+```python
+# alembic.ini
+[alembic]
+script_location = backend/migrations
+sqlalchemy.url = postgresql://user:pass@localhost/myapp
 
-```sql
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    display_name VARCHAR(100),
-    avatar_url TEXT,
-    auth_provider VARCHAR(50) NOT NULL, -- 'google', 'apple', 'email'
-    auth_provider_id VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    is_active BOOLEAN DEFAULT TRUE,
-    metadata JSONB DEFAULT '{}'::jsonb,
-    
-    CONSTRAINT users_email_check CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
-    CONSTRAINT users_auth_provider_check CHECK (auth_provider IN ('google', 'apple', 'email'))
-);
-
--- インデックス
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_auth_provider ON users(auth_provider, auth_provider_id);
-CREATE INDEX idx_users_created_at ON users(created_at);
+# マイグレーションコマンド
+alembic init migrations
+alembic revision --autogenerate -m "add user table"
+alembic upgrade head
 ```
 
-### 3.2 chat_sessions テーブル
-チャットセッション管理
-
+#### JSONB利点：スキーマレス変更
 ```sql
-CREATE TABLE chat_sessions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    title VARCHAR(200) DEFAULT 'New Chat',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    is_archived BOOLEAN DEFAULT FALSE,
-    settings JSONB DEFAULT '{
-        "model": "gpt-4",
-        "temperature": 0.7,
-        "max_tokens": 1000,
-        "system_prompt": "あなたは親切なAIアシスタントです。"
-    }'::jsonb
-);
-
--- インデックス
-CREATE INDEX idx_chat_sessions_user_id ON chat_sessions(user_id);
-CREATE INDEX idx_chat_sessions_created_at ON chat_sessions(created_at);
-CREATE INDEX idx_chat_sessions_user_active ON chat_sessions(user_id, is_archived, updated_at);
+-- カラム追加不要、即座に新フィールド追加可能
+UPDATE users 
+SET profile = profile || '{"new_field": "value"}'
+WHERE id = ?;
 ```
 
-### 3.3 messages テーブル
-チャットメッセージ管理
+## 3. Redis設計詳細
 
-```sql
-CREATE TABLE messages (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
-    role VARCHAR(20) NOT NULL, -- 'user', 'assistant', 'system'
-    content TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    metadata JSONB DEFAULT '{}'::jsonb,
-    token_count INTEGER DEFAULT 0,
-    
-    CONSTRAINT messages_role_check CHECK (role IN ('user', 'assistant', 'system')),
-    CONSTRAINT messages_content_check CHECK (LENGTH(content) > 0)
-);
+### 3.1 キー設計規約
+```
+{prefix}:{entity}:{identifier}:{suffix}
 
--- インデックス
-CREATE INDEX idx_messages_session_id ON messages(session_id);
-CREATE INDEX idx_messages_created_at ON messages(created_at);
-CREATE INDEX idx_messages_session_created ON messages(session_id, created_at);
+例：
+session:user:123456:data
+cache:api:user_profile:123456
+queue:task:celery:default
 ```
 
-### 3.4 user_subscriptions テーブル
-ユーザーサブスクリプション管理
+### 3.2 用途別設計
 
-```sql
-CREATE TABLE user_subscriptions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    stripe_subscription_id VARCHAR(255) UNIQUE,
-    status VARCHAR(50) NOT NULL, -- 'active', 'canceled', 'past_due', 'unpaid'
-    plan_type VARCHAR(50) NOT NULL, -- 'free', 'basic', 'premium'
-    current_period_start TIMESTAMP WITH TIME ZONE,
-    current_period_end TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
-    CONSTRAINT user_subscriptions_status_check CHECK (
-        status IN ('active', 'canceled', 'past_due', 'unpaid', 'trialing')
-    ),
-    CONSTRAINT user_subscriptions_plan_check CHECK (
-        plan_type IN ('free', 'basic', 'premium')
-    )
-);
+#### セッション管理
+```python
+# キー構造
+session:{session_id} → JSON data
+user:sessions:{user_id} → Set of session_ids
 
--- インデックス
-CREATE UNIQUE INDEX idx_user_subscriptions_user_id ON user_subscriptions(user_id);
-CREATE INDEX idx_user_subscriptions_stripe_id ON user_subscriptions(stripe_subscription_id);
-CREATE INDEX idx_user_subscriptions_status ON user_subscriptions(status);
+# TTL設定
+24時間（設定可能）
 ```
 
-### 3.5 usage_logs テーブル
-API使用量ログ管理
+#### APIキャッシュ
+```python
+# キー構造
+cache:api:{endpoint}:{params_hash} → Response JSON
 
-```sql
-CREATE TABLE usage_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_id UUID REFERENCES chat_sessions(id) ON DELETE SET NULL,
-    message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
-    tokens_used INTEGER NOT NULL DEFAULT 0,
-    cost DECIMAL(10, 6) DEFAULT 0.00,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    model_used VARCHAR(50) DEFAULT 'gpt-4',
-    
-    CONSTRAINT usage_logs_tokens_check CHECK (tokens_used >= 0),
-    CONSTRAINT usage_logs_cost_check CHECK (cost >= 0)
-);
-
--- インデックス
-CREATE INDEX idx_usage_logs_user_id ON usage_logs(user_id);
-CREATE INDEX idx_usage_logs_created_at ON usage_logs(created_at);
-CREATE INDEX idx_usage_logs_user_date ON usage_logs(user_id, created_at);
-CREATE INDEX idx_usage_logs_session_id ON usage_logs(session_id);
+# TTL設定
+5分〜1時間（エンドポイント別）
 ```
 
-## 4. Row Level Security (RLS) 設定
+#### タスクキュー（Celery）
+```python
+# キー構造
+celery:queue:{queue_name} → List of tasks
+celery:result:{task_id} → Task result
 
-### 4.1 users テーブル
-```sql
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-
--- ユーザーは自分の情報のみアクセス可能
-CREATE POLICY users_policy ON users
-    FOR ALL
-    USING (auth.uid() = id);
+# TTL設定
+結果は1時間保持
 ```
 
-### 4.2 chat_sessions テーブル
-```sql
-ALTER TABLE chat_sessions ENABLE ROW LEVEL SECURITY;
-
--- ユーザーは自分のセッションのみアクセス可能
-CREATE POLICY chat_sessions_policy ON chat_sessions
-    FOR ALL
-    USING (user_id = auth.uid());
+### 3.3 Redis永続化設定
+```conf
+# redis.conf
+appendonly yes
+appendfsync everysec
+save 900 1
+save 300 10
+save 60 10000
 ```
 
-### 4.3 messages テーブル
-```sql
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+## 4. データ整合性とトランザクション
 
--- ユーザーは自分のセッションのメッセージのみアクセス可能
-CREATE POLICY messages_policy ON messages
-    FOR ALL
-    USING (
-        session_id IN (
-            SELECT id FROM chat_sessions WHERE user_id = auth.uid()
+### 4.1 トランザクション管理
+```python
+# SQLAlchemy によるトランザクション
+async with async_session() as session:
+    async with session.begin():
+        user = User(email="test@example.com")
+        session.add(user)
+        
+        auth_provider = AuthProvider(
+            user_id=user.id,
+            provider="google"
         )
-    );
+        session.add(auth_provider)
+        # 自動コミットまたはロールバック
 ```
 
-### 4.4 user_subscriptions テーブル
+### 4.2 楽観的ロック
 ```sql
-ALTER TABLE user_subscriptions ENABLE ROW LEVEL SECURITY;
+-- version カラムによる楽観的ロック
+ALTER TABLE users ADD COLUMN version INTEGER DEFAULT 0;
 
--- ユーザーは自分のサブスクリプション情報のみアクセス可能
-CREATE POLICY user_subscriptions_policy ON user_subscriptions
-    FOR ALL
-    USING (user_id = auth.uid());
+-- 更新時のバージョンチェック
+UPDATE users 
+SET data = ?, version = version + 1 
+WHERE id = ? AND version = ?;
 ```
 
-### 4.5 usage_logs テーブル
+## 5. パフォーマンス最適化
+
+### 5.1 インデックス戦略
 ```sql
-ALTER TABLE usage_logs ENABLE ROW LEVEL SECURITY;
+-- 基本インデックス
+CREATE INDEX ON table_name (column_name);
 
--- ユーザーは自分の使用ログのみ参照可能（挿入は管理者のみ）
-CREATE POLICY usage_logs_select_policy ON usage_logs
-    FOR SELECT
-    USING (user_id = auth.uid());
+-- 複合インデックス
+CREATE INDEX ON users (status, created_at DESC);
 
-CREATE POLICY usage_logs_insert_policy ON usage_logs
-    FOR INSERT
-    WITH CHECK (user_id = auth.uid());
+-- JSONB用GINインデックス
+CREATE INDEX ON users USING GIN (profile);
+
+-- 部分インデックス
+CREATE INDEX ON users (email) WHERE deleted_at IS NULL;
 ```
 
-## 5. ビュー定義
-
-### 5.1 user_stats ビュー
-ユーザー統計情報
-
+### 5.2 パーティショニング（将来対応）
 ```sql
-CREATE VIEW user_stats AS
-SELECT 
-    u.id,
-    u.email,
-    u.display_name,
-    COUNT(DISTINCT cs.id) as total_sessions,
-    COUNT(DISTINCT m.id) as total_messages,
-    COALESCE(SUM(ul.tokens_used), 0) as total_tokens_used,
-    COALESCE(SUM(ul.cost), 0) as total_cost,
-    u.created_at as user_created_at,
-    MAX(cs.updated_at) as last_activity
-FROM users u
-LEFT JOIN chat_sessions cs ON u.id = cs.user_id
-LEFT JOIN messages m ON cs.id = m.session_id
-LEFT JOIN usage_logs ul ON u.id = ul.user_id
-GROUP BY u.id, u.email, u.display_name, u.created_at;
+-- 時系列データのパーティション例
+CREATE TABLE logs (
+    id UUID,
+    created_at TIMESTAMP,
+    data JSONB
+) PARTITION BY RANGE (created_at);
+
+CREATE TABLE logs_2024_01 PARTITION OF logs
+FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
 ```
 
-### 5.2 session_summary ビュー
-セッション要約情報
+## 6. バックアップとリストア
 
-```sql
-CREATE VIEW session_summary AS
-SELECT 
-    cs.id,
-    cs.user_id,
-    cs.title,
-    cs.created_at,
-    cs.updated_at,
-    COUNT(m.id) as message_count,
-    COALESCE(SUM(ul.tokens_used), 0) as total_tokens,
-    COALESCE(SUM(ul.cost), 0) as total_cost,
-    MAX(m.created_at) as last_message_at
-FROM chat_sessions cs
-LEFT JOIN messages m ON cs.id = m.session_id
-LEFT JOIN usage_logs ul ON cs.id = ul.session_id
-GROUP BY cs.id, cs.user_id, cs.title, cs.created_at, cs.updated_at;
+### 6.1 バックアップ戦略
+```bash
+# 日次バックアップスクリプト
+#!/bin/bash
+DATE=$(date +%Y%m%d)
+pg_dump -h localhost -U postgres -d myapp | gzip > /backups/myapp_$DATE.sql.gz
+
+# 保持期間：30日
+find /backups -name "*.sql.gz" -mtime +30 -delete
 ```
 
-## 6. 関数・トリガー
-
-### 6.1 updated_at 自動更新トリガー
-```sql
--- 汎用的な updated_at 更新関数
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
-
--- 各テーブルにトリガー設定
-CREATE TRIGGER update_users_updated_at 
-    BEFORE UPDATE ON users 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_chat_sessions_updated_at 
-    BEFORE UPDATE ON chat_sessions 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_user_subscriptions_updated_at 
-    BEFORE UPDATE ON user_subscriptions 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+### 6.2 ポイントインタイムリカバリ
+```bash
+# WAL アーカイブ設定
+archive_mode = on
+archive_command = 'cp %p /archive/%f'
 ```
 
-### 6.2 セッションタイトル自動生成関数
+## 7. 監視とメンテナンス
+
+### 7.1 監視項目
+- 接続数
+- クエリパフォーマンス
+- テーブル/インデックスサイズ
+- デッドロック
+- レプリケーション遅延
+
+### 7.2 定期メンテナンス
 ```sql
-CREATE OR REPLACE FUNCTION generate_session_title(session_id UUID)
-RETURNS TEXT AS $$
-DECLARE
-    first_message TEXT;
-    title TEXT;
-BEGIN
-    -- セッションの最初のユーザーメッセージを取得
-    SELECT content INTO first_message
-    FROM messages 
-    WHERE session_id = generate_session_title.session_id 
-      AND role = 'user'
-    ORDER BY created_at ASC 
-    LIMIT 1;
+-- VACUUM（自動実行も設定）
+VACUUM ANALYZE;
+
+-- インデックス再構築
+REINDEX DATABASE myapp;
+
+-- 統計情報更新
+ANALYZE;
+```
+
+## 8. セキュリティ
+
+### 8.1 アクセス制御
+```sql
+-- ロール作成
+CREATE ROLE app_user WITH LOGIN PASSWORD 'secure_password';
+GRANT CONNECT ON DATABASE myapp TO app_user;
+GRANT USAGE ON SCHEMA public TO app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+```
+
+### 8.2 データ暗号化
+```sql
+-- 機密データの暗号化
+CREATE EXTENSION pgcrypto;
+
+-- 暗号化保存
+INSERT INTO users (email, secret_data) 
+VALUES ('user@example.com', pgp_sym_encrypt('secret', 'password'));
+
+-- 復号化取得
+SELECT pgp_sym_decrypt(secret_data, 'password') FROM users;
+```
+
+## 9. 機能別テーブル設計への参照
+
+各機能の詳細なテーブル設計は、機能別設計書を参照してください：
+
+- [ログイン機能のDB設計](/dev_tools/spec/kairo/login/design.md#データベース設計)
+- [その他機能のDB設計](/dev_tools/spec/kairo/[機能名]/design.md)
+
+**注**: 本書では全体的なデータベース設計方針と共通仕様を定義しています。各機能固有のテーブル定義や詳細な実装は、それぞれの機能別設計書に記載されます。
+
+## 10. 移行計画
+
+### 10.1 既存データからの移行
+```python
+# 移行スクリプト例
+async def migrate_from_old_system():
+    # 旧システムからデータ取得
+    old_data = fetch_from_old_db()
     
-    IF first_message IS NULL THEN
-        RETURN 'New Chat';
-    END IF;
-    
-    -- 最初の50文字を取得してタイトルとする
-    title := LEFT(first_message, 50);
-    IF LENGTH(first_message) > 50 THEN
-        title := title || '...';
-    END IF;
-    
-    RETURN title;
-END;
-$$ LANGUAGE plpgsql;
+    # 新形式に変換
+    for record in old_data:
+        user = User(
+            email=record['email'],
+            profile={
+                'name': record['name'],
+                'legacy_id': record['id']
+            }
+        )
+        await session.add(user)
 ```
 
-## 7. インデックス戦略
+### 10.2 将来の拡張性
+- NoSQL（MongoDB）へのハイブリッド移行
+- 時系列データベース（TimescaleDB）統合
+- グラフデータベース（Neo4j）連携
 
-### 7.1 パフォーマンス重要クエリ
-1. **ユーザーのセッション一覧取得**
-   - `chat_sessions(user_id, updated_at DESC)`
-   
-2. **セッションのメッセージ履歴取得**
-   - `messages(session_id, created_at ASC)`
-   
-3. **ユーザーの使用量集計**
-   - `usage_logs(user_id, created_at)`
+---
 
-### 7.2 複合インデックス
-```sql
--- セッション一覧取得用
-CREATE INDEX idx_chat_sessions_user_updated 
-ON chat_sessions(user_id, updated_at DESC) 
-WHERE is_archived = FALSE;
-
--- メッセージ履歴取得用
-CREATE INDEX idx_messages_session_created 
-ON messages(session_id, created_at ASC);
-
--- 使用量集計用
-CREATE INDEX idx_usage_logs_user_date 
-ON usage_logs(user_id, DATE(created_at));
-
--- 月次集計用
-CREATE INDEX idx_usage_logs_monthly 
-ON usage_logs(user_id, DATE_TRUNC('month', created_at));
-```
-
-## 8. データ保持・アーカイブ戦略
-
-### 8.1 データ保持期間
-- **messages**: 無制限（ユーザーが削除するまで）
-- **usage_logs**: 2年間（法的要件・分析用）
-- **chat_sessions**: 無制限（アーカイブ機能で管理）
-
-### 8.2 アーカイブ処理
-```sql
--- 古い使用ログのアーカイブ（2年以上前）
-CREATE OR REPLACE FUNCTION archive_old_usage_logs()
-RETURNS INTEGER AS $$
-DECLARE
-    archived_count INTEGER;
-BEGIN
-    -- 2年以上前のログを別テーブルに移動
-    INSERT INTO usage_logs_archive 
-    SELECT * FROM usage_logs 
-    WHERE created_at < NOW() - INTERVAL '2 years';
-    
-    GET DIAGNOSTICS archived_count = ROW_COUNT;
-    
-    DELETE FROM usage_logs 
-    WHERE created_at < NOW() - INTERVAL '2 years';
-    
-    RETURN archived_count;
-END;
-$$ LANGUAGE plpgsql;
-```
-
-## 9. バックアップ・復旧戦略
-
-### 9.1 バックアップ方針
-- **自動バックアップ**: Supabase標準機能（日次）
-- **手動バックアップ**: 重要な変更前
-- **ポイントインタイム復旧**: 7日間
-
-### 9.2 災害復旧
-- **RTO**: 4時間以内
-- **RPO**: 1時間以内
-- **レプリケーション**: 東京リージョン内
-
-## 10. マイグレーション戦略
-
-### 10.1 段階的移行計画
-1. **Phase 1**: 基本テーブル作成（users, chat_sessions, messages）
-2. **Phase 2**: 認証統合後のユーザーデータ移行
-3. **Phase 3**: サブスクリプション・使用量ログ追加
-4. **Phase 4**: 高度な機能（検索、分析）追加
-
-### 10.2 マイグレーションファイル管理
-```
-migrations/
-├── 001_initial_schema.sql
-├── 002_add_subscriptions.sql
-├── 003_add_usage_tracking.sql
-├── 004_add_search_indexes.sql
-└── rollback/
-    ├── 001_rollback.sql
-    ├── 002_rollback.sql
-    └── ...
-```
-
-## 11. パフォーマンス監視
-
-### 11.1 監視対象クエリ
-- セッション一覧取得
-- メッセージ履歴取得
-- 使用量集計
-- ユーザー統計
-
-### 11.2 パフォーマンス目標
-- **セッション一覧**: < 100ms
-- **メッセージ履歴**: < 200ms
-- **使用量集計**: < 500ms
-- **ユーザー統計**: < 1s
-
-### 11.3 最適化手法
-- クエリプラン分析
-- インデックス最適化
-- パーティショニング（将来）
-- キャッシュ戦略
+**最終更新日**: 2025-08-29  
+**バージョン**: 2.0.0  
+**ステータス**: 確定

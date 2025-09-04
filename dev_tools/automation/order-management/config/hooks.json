@@ -1,0 +1,92 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "name": "completion-detector",
+        "matcher": "TodoWrite.*completed|mcp__serena__think_about_whether_you_are_done",
+        "handler": {
+          "type": "script",
+          "path": "./scripts/completion-handler.py",
+          "args": ["--session-id", "${SESSION_ID}", "--output", "${TOOL_OUTPUT}"]
+        }
+      },
+      {
+        "name": "test-result-parser",
+        "matcher": "pytest.*passed|All tests passed|テスト成功",
+        "handler": {
+          "type": "function",
+          "module": "handlers.test_handlers",
+          "function": "parse_test_results"
+        }
+      },
+      {
+        "name": "build-success-detector",
+        "matcher": "Build successful|ビルド成功",
+        "handler": {
+          "type": "function",
+          "module": "handlers.build_handlers", 
+          "function": "handle_build_success"
+        }
+      }
+    ],
+    "PreToolUse": [
+      {
+        "name": "resource-checker",
+        "matcher": ".*",
+        "handler": {
+          "type": "script",
+          "path": "./scripts/resource-checker.py",
+          "blocking": true
+        }
+      },
+      {
+        "name": "security-filter",
+        "matcher": "system|delete|rm -rf|sudo|chmod 777",
+        "handler": {
+          "type": "function",
+          "module": "handlers.security_handlers",
+          "function": "check_dangerous_commands",
+          "blocking": true
+        }
+      }
+    ],
+    "Notification": [
+      {
+        "name": "permission-notifier", 
+        "matcher": ".*",
+        "handler": {
+          "type": "function",
+          "module": "handlers.notification_handlers",
+          "function": "handle_permission_request"
+        }
+      }
+    ],
+    "Stop": [
+      {
+        "name": "session-finalizer",
+        "matcher": ".*",
+        "handler": {
+          "type": "function", 
+          "module": "handlers.stop_handlers",
+          "function": "finalize_session"
+        }
+      }
+    ]
+  },
+  "patterns": {
+    "todo_completion": "\"status\":\\s*\"completed\"",
+    "serena_completion": "mcp__serena__think_about_whether_you_are_done",
+    "implementation_done": "実装完了|implementation\\s+completed",
+    "test_success": "All\\s+tests\\s+passed|テスト成功",
+    "build_success": "Build\\s+successful|ビルド成功",
+    "error_pattern": "Error:|Exception:|Failed:|エラー:",
+    "warning_pattern": "Warning:|注意:|警告:"
+  },
+  "settings": {
+    "max_hook_execution_time": 30,
+    "enable_hook_logging": true,
+    "hook_log_level": "INFO",
+    "retry_failed_hooks": true,
+    "max_retry_attempts": 3
+  }
+}

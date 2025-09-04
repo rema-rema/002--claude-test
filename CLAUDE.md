@@ -179,28 +179,28 @@ spec/
 
 #### 📁 開発ツールのディレクトリ配置ルール（厳守）
 **Discord関連開発ツールの配置**: 
-- **すべてのDiscord関連開発ツール** → `discord-bot/src/` 内に配置
+- **すべてのDiscord関連開発ツール** → `dev_tools/discord/` 内に配置
 - **理由**: 製品コードとの混在を防ぎ、開発ツールを明確に分離
 - **対象**: Discord Bot機能、Discord通知システム、承認システム等
 
 **配置例**:
 ```
-discord-bot/
-├── src/
-│   ├── components/      # Discord関連コンポーネント
-│   ├── services/        # Discord・Claude連携サービス  
-│   ├── utils/           # Discord関連ユーティリティ
-│   ├── tests/           # Discord関連テスト
-│   └── test-results/    # テスト実行結果
-├── docs/                # Discord専用ドキュメント
-├── jest.config.js       # Discord専用Jest設定
-├── jest.setup.js        # Discord専用Jestセットアップ
-└── package.json         # Discord専用パッケージ設定
+dev_tools/
+├── discord/
+│   ├── claude-bridge/   # Claude-Discord-Bridge サーバー
+│   └── notifications/   # マルチチャンネル通知システム
+├── automation/
+│   └── order-management/# セッション・キュー管理システム
+└── testing/
+    ├── reports/         # テストレポート
+    ├── temp/           # 一時ファイル・ログ
+    ├── attachments/    # セッション別添付ファイル
+    └── playwright-tests/ # Playwright E2Eテスト
 ```
 
 **重要**: 
 - `src/` 直下にDiscord関連コードを配置しない
-- Discord専用の設定ファイルは `claude-discord-bridge-server/` 内に配置
+- Discord専用の設定ファイルは `dev_tools/discord/claude-bridge/` 内に配置
 - 他プロジェクト部分とのテスト設定衝突を回避
 
 **注意**: A案（Kairo統合開発プラン）は `kairo-integration-plan.md` に保留中。Tsumiki稼働確認後に検討予定。
@@ -405,7 +405,7 @@ npx playwright test --screenshot=only-on-failure
 
 #### 簡単起動・停止（推奨）
 ```bash
-cd /workspaces/002--claude-test/claude-discord-bridge-server/
+cd dev_tools/discord/claude-bridge/
 ./start-bridge.sh    # サービス一括起動
 ./stop-bridge.sh     # サービス一括停止
 ```
@@ -424,7 +424,7 @@ cd /workspaces/002--claude-test/claude-discord-bridge-server/
 - **環境診断**: `./bin/vai doctor`
 
 ### 設定詳細
-- **作業ディレクトリ**: `/workspaces/002--claude-test`
+- **作業ディレクトリ**: プロジェクトルート
 - **Discordチャンネル**: `1405815779198369903` (main)
 - **Flaskポート**: `5001`
 - **Claude Code**: `--dangerously-skip-permissions` オプション有効
@@ -478,6 +478,90 @@ cd /workspaces/002--claude-test/claude-discord-bridge-server/
 dp 1 "<@ユーザー番号> {応答}\n{応答}" (Session=1の場合)
 dp 2 "<@ユーザー番号> {応答}\n{応答}" (Session=2の場合)
 ```
+
+## サーバー環境
+**現在の環境**: 独立した Linux サーバー (Ubuntu) 
+- GitHub Codespaces から移行済み (2025-08-31)
+- 完全なsudo権限とネットワーク制御が可能
+
+## tmux使用方法（VS Code Remote SSH環境対応）
+
+### 概要
+VS Code Remote SSH環境でtmuxを使用することで、以下の問題を解決できます：
+- VS Code終了後もサーバー上でプロセスが継続実行される
+- ネットワーク切断で作業が失われることを防止
+- 長時間実行タスクを背景で継続可能
+- 複数の作業を並行実行可能
+
+### デタッチ操作の見た目の変化（Windows環境）
+tmuxセッション内で `Ctrl+b d` を実行すると：
+```
+[実行前] user@server:~/project$ (tmuxセッション内)
+[Ctrl+b d 実行]
+[detached (from session development)]
+[実行後] user@server:~$ (通常のシェル、tmuxセッションは背景で継続)
+```
+
+**重要**: デタッチ後は画面が通常のシェルに戻りますが、tmuxセッション内で実行していたプロセス（claude code等）は背景で継続実行されています。`tmux ls` で確認、`tmux a -t セッション名` で再接続できます。
+
+### 基本的な使い方
+
+#### セッション操作
+```bash
+# 新しいセッション開始
+tmux new -s development
+
+# セッションからデタッチ（プロセス継続）
+# Windowsクライアント: Ctrl+b を押した後、d を押す
+# ※操作後、通常のシェルプロンプトに戻ります（tmuxセッションは背景で継続）
+
+# セッション再接続
+tmux a -t development
+
+# セッション一覧
+tmux ls
+
+# セッション終了
+tmux kill-session -t development
+```
+
+#### 実践的なワークフロー
+
+**作業開始時**：
+```bash
+# VS Code Remote SSH接続後
+tmux new -s claude-work
+cd /home/rema/project/002--claude-test
+claude code  # 長時間実装セッション開始
+```
+
+**VS Code終了時**：
+```bash
+# tmuxからデタッチ（Ctrl+b d）
+# VS Codeを安全に終了
+```
+
+**作業再開時**：
+```bash
+# VS Code Remote SSH再接続
+tmux a -t claude-work
+# 継続中の作業に復帰
+```
+
+### tmux内でのキーバインド
+- `Ctrl+b c`: 新しいウィンドウ作成
+- `Ctrl+b n/p`: ウィンドウ切り替え
+- `Ctrl+b %`: 縦分割
+- `Ctrl+b "`: 横分割
+- `Ctrl+b o`: ペイン間移動
+- `Ctrl+b d`: デタッチ
+
+### 設定ファイル
+`~/.tmux.conf` に基本設定済み：
+- マウス操作有効化
+- その他の設定は必要に応じて追加
+
+詳細な使用方法は `~/tmux-guide.md` を参照してください。
 
 ## Testing and Debugging
 

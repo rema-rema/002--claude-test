@@ -1,0 +1,158 @@
+version: '3.3'
+
+services:
+  # ===================
+  # Backend API Service
+  # ===================
+  backend-staging:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend-staging
+    ports:
+      - "8005:8000"
+    environment:
+      # Application
+      APP_NAME: "002 Claude Test Backend - Staging"
+      DEBUG: "false"
+      
+      # Database
+      DATABASE_URL: "postgresql+asyncpg://staging_user:staging_secure456@postgres-staging:5432/staging_db"
+      
+      # Redis
+      REDIS_URL: "redis://redis-staging:6379/0"
+      
+      # JWT
+      JWT_SECRET: "staging-jwt-secret-key-change-in-production"
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      JWT_ALGORITHM: "HS256"
+      
+      # Google OAuth
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-staging-client-id}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-staging-client-secret}"
+      GOOGLE_REDIRECT_URI: "http://localhost:3005/auth/callback"
+      
+      # CORS
+      CORS_ORIGINS: "http://localhost:3005,http://localhost:8005"
+      
+      # Server
+      BACKEND_PORT: "8000"
+      FRONTEND_PORT: "3005"
+    depends_on:
+      - postgres-staging
+      - redis-staging
+    volumes:
+      - ./backend:/app
+    networks:
+      - staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===================
+  # Frontend Service
+  # ===================
+  frontend-staging:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "http://localhost:8005"
+        NEXT_PUBLIC_SESSION_ID: "staging"
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-staging-client-id}"
+    container_name: frontend-staging
+    ports:
+      - "3005:3000"
+    environment:
+      NODE_ENV: "production"
+      NEXT_PUBLIC_API_URL: "http://localhost:8005"
+      NEXT_PUBLIC_SESSION_ID: "staging"
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-staging-client-id}"
+    depends_on:
+      - backend-staging
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===================
+  # Database Service
+  # ===================
+  postgres-staging:
+    image: postgres:15-alpine
+    container_name: postgres-staging
+    ports:
+      - "5405:5432"
+    environment:
+      POSTGRES_DB: staging_db
+      POSTGRES_USER: staging_user
+      POSTGRES_PASSWORD: staging_secure456
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+      - ./backend/alembic:/docker-entrypoint-initdb.d
+    networks:
+      - staging-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U staging_user -d staging_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ===================
+  # Redis Service
+  # ===================
+  redis-staging:
+    image: redis:7-alpine
+    container_name: redis-staging
+    ports:
+      - "6405:6379"
+    volumes:
+      - redis_staging_data:/data
+    networks:
+      - staging-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ===================
+  # Nginx Reverse Proxy
+  # ===================
+  nginx-staging:
+    image: nginx:alpine
+    container_name: nginx-staging
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/staging.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend-staging
+      - frontend-staging
+    networks:
+      - staging-network
+    restart: unless-stopped
+
+volumes:
+  postgres_staging_data:
+  redis_staging_data:
+
+networks:
+  staging-network:
+    driver: bridge

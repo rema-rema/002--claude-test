@@ -21,13 +21,13 @@
 
 ### 基準設計書
 以下のTrack B完成版設計書を基準とします：
-- `/workspaces/002--claude-test/spec/kairo/discord-multi-session/REVISED-REQUIREMENTS.md`
-- `/workspaces/002--claude-test/spec/kairo/discord-multi-session/REVISED-DESIGN.md`
-- `/workspaces/002--claude-test/spec/kairo/discord-multi-session/REVISED-IMPLEMENTATION-PLAN.md`
+- `/workspaces/002--claude-test/dev_tools/spec/kairo/discord-multi-session/REVISED-REQUIREMENTS.md`
+- `/workspaces/002--claude-test/dev_tools/spec/kairo/discord-multi-session/REVISED-DESIGN.md`
+- `/workspaces/002--claude-test/dev_tools/spec/kairo/discord-multi-session/REVISED-IMPLEMENTATION-PLAN.md`
 
 ### 作成する成果物
 ```
-/workspaces/002--claude-test/spec/kairo/discord-multi-session/
+/workspaces/002--claude-test/dev_tools/spec/kairo/discord-multi-session/
 ├── tasks.md                    # メインタスク管理ファイル
 ├── phase0-tasks.md            # Phase 0: プロトタイプ検証タスク詳細
 ├── phase1-tasks.md            # Phase 1: 基本実装タスク詳細
