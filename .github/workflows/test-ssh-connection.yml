@@ -1,0 +1,38 @@
+name: SSH接続テスト - 最小限の技術検証
+
+on:
+  workflow_dispatch:  # 手動実行のみ
+  push:
+    branches: [ develop ]
+    paths:
+      - '.github/workflows/test-ssh-connection.yml'
+
+jobs:
+  test-ssh-connection:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.HOST_IP }} >> ~/.ssh/known_hosts
+        
+    - name: Test SSH Connection
+      run: |
+        echo "=== SSH接続テスト開始 ==="
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} "echo 'SSH接続成功！'; hostname; date"
+        
+    - name: Test Server Access
+      run: |
+        echo "=== サーバーアクセステスト ==="
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} "ls -la /home/rema/release/002--claude-test | head -5"
+        
+    - name: Test API Health
+      run: |
+        echo "=== APIヘルスチェック ==="
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.HOST_IP }} "curl -s http://localhost:8000/api/v1/health | python3 -m json.tool"
