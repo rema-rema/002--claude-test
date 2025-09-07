@@ -29,16 +29,20 @@
 #### 設定内容
 ```conf
 # /etc/dnsmasq.d/home.conf
+# 2025-09-07 更新: 両IP対応
+address=/home.poco/192.168.1.13
 address=/home.poco/100.115.216.73
+address=/.poco/192.168.1.13
 address=/.poco/100.115.216.73
 server=8.8.8.8
 server=8.8.4.4
 ```
 
 #### 役割
-- カスタムドメイン（.poco）の解決
+- カスタムドメイン（.poco）の解決（VPN/ローカル両対応）
 - 外部DNSへのフォワーディング
 - キャッシュ管理
+- 両IP登録によるVPN/ローカル環境での統一アクセス
 
 ### 2.2 Webプロキシ層（nginx）
 
@@ -136,6 +140,14 @@ sudo systemctl restart dnsmasq
 sudo nano /etc/nginx/sites-available/home
 sudo nginx -t
 sudo systemctl reload nginx
+
+# NetworkManager DNS管理無効化（2025-09-07追加）
+sudo nano /etc/NetworkManager/NetworkManager.conf
+# [main]セクションに dns=none を追加
+sudo systemctl restart NetworkManager
+
+# resolv.conf設定（永続化対応）
+echo -e 'nameserver 127.0.0.1\nnameserver 8.8.8.8' | sudo tee /etc/resolv.conf
 ```
 
 ### 6.3 ログ管理
@@ -175,3 +187,4 @@ location /app2 { proxy_pass http://localhost:3002; }
 | 日付 | バージョン | 変更内容 | 変更者 |
 |------|------------|----------|--------|
 | 2025-09-04 | 1.0 | 初版作成（実装済み内容の文書化） | System |
+| 2025-09-07 | 1.1 | NetworkManager統合と両IP対応設計追加 | System |

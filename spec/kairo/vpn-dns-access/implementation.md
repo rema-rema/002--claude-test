@@ -44,16 +44,20 @@ sudo apt install -y dnsmasq
 **作成ファイル**: `/etc/dnsmasq.d/home.conf`
 
 ```conf
+# 2025-09-07 更新: 両IP対応に変更
+address=/home.poco/192.168.1.13
 address=/home.poco/100.115.216.73
+address=/.poco/192.168.1.13
 address=/.poco/100.115.216.73
 server=8.8.8.8
 server=8.8.4.4
 ```
 
 **設計ポイント**:
-- カスタムドメイン（.poco）を Tailscale IP（100.115.216.73）に解決
+- カスタムドメイン（.poco）を 両IP（ローカル: 192.168.1.13、VPN: 100.115.216.73）に解決
 - 外部DNS（Google DNS）へのフォワーディング設定
 - インターネット接続維持のための上位DNS設定
+- VPN接続時でもローカル接続時でも同じURLでアクセス可能
 
 #### 1.3 dnsmasqサービス起動・設定
 ```bash
@@ -149,21 +153,29 @@ Serving HTTP on 0.0.0.0 port 3000 (http://0.0.0.0:3000/) ...
 
 ### フェーズ4: システム統合・解決フロー構築
 
-#### 4.1 システムDNS設定
+#### 4.1 システムDNS設定と永続化
 ```bash
-# システムDNS設定更新
-echo 'nameserver 127.0.0.1' | sudo tee /etc/resolv.conf
+# システムDNS設定更新（2025-09-07 改良版）
+echo -e 'nameserver 127.0.0.1\nnameserver 8.8.8.8' | sudo tee /etc/resolv.conf
+
+# NetworkManager のDNS管理を無効化（再起動後も維持）
+sudo nano /etc/NetworkManager/NetworkManager.conf
+# [main]セクションに dns=none を追加
+sudo systemctl restart NetworkManager
 ```
 
-**実行結果**: `/etc/resolv.conf` 更新完了
+**実行結果**: 
+- `/etc/resolv.conf` 更新完了
+- NetworkManager による上書き防止設定完了
 
 **注意事項**: 
 - Claude Code API接続への影響を慎重に検証
 - 緊急復旧手順の確立（`echo 'nameserver 8.8.8.8' | sudo tee /etc/resolv.conf`）
+- dns=none 設定により再起動後も設定維持
 
 #### 4.2 システム全体疎通確認
 **確認項目**:
-1. DNS解決: `nslookup home.poco` → ✅ 100.115.216.73
+1. DNS解決: `nslookup home.poco` → ✅ 192.168.1.13, 100.115.216.73 (両IP返却)
 2. HTTP接続: `curl -I http://home.poco` → ✅ 200 OK
 3. プロキシ転送: バックエンドアクセスログ確認 → ✅ 接続確認
 
@@ -424,3 +436,10 @@ sudo systemctl reload nginx
 | 日付 | バージョン | 変更内容 | 変更者 |
 |------|------------|----------|--------|
 | 2025-09-04 | 1.0 | 実装記録初版作成 | System |
+| 2025-09-07 | 1.1 | NetworkManager統合と両IP対応追加 | System |
+
+### 2025-09-07 追加実装内容
+1. **dnsmasq両IP対応**: ローカルIP (192.168.1.13) とVPN IP (100.115.216.73) の両方を登録
+2. **NetworkManager統合**: dns=none 設定により再起動後も/etc/resolv.conf維持
+3. **nginx設定修正**: proxy_pass を正しくポート3000に設定
+4. **永続化対応**: システム再起動後も全設定が維持される構成を実装

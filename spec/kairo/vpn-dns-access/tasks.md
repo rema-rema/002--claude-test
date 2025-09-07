@@ -290,9 +290,10 @@ server {
 ## 成果物一覧
 
 ### 設定ファイル
-- `/etc/dnsmasq.d/home.conf` - DNS解決設定
+- `/etc/dnsmasq.d/home.conf` - DNS解決設定（両IP対応）
 - `/etc/nginx/sites-available/home` - nginx設定
 - `/etc/resolv.conf` - システムDNS設定
+- `/etc/NetworkManager/NetworkManager.conf` - NetworkManager設定（dns=none）
 
 ### ドキュメント
 - `spec/kairo/vpn-dns-access/requirements.md` - 要件定義書
@@ -309,6 +310,13 @@ server {
 | 日付 | バージョン | 変更内容 | 変更者 |
 |------|------------|----------|--------|
 | 2025-09-04 | 1.0 | 初版作成（実装済み内容のタスク整理） | System |
+| 2025-09-07 | 1.1 | NetworkManager統合と両IP対応タスク完了 | System |
+
+### 2025-09-07 追加対応内容
+- **T1.3 追加実装**: NetworkManagerのDNS管理無効化（dns=none設定）
+- **T2.2 改修**: dnsmasq設定を両IP対応に変更（ローカル/VPN統一アクセス）
+- **T3.1 修正**: nginx proxy_passをポート3000に修正
+- **永続化対応**: 再起動後も全設定維持の実装完了
 
 ---
 
