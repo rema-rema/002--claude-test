@@ -32,10 +32,10 @@
 - **File Storage**: Local Filesystem (S3互換移行可能)
 
 #### インフラストラクチャ
-- **Container**: Docker + Docker Compose
+- **Deployment**: 直接実行（現在）→ Docker化検討中（検討事項 No.1）
 - **Reverse Proxy**: Nginx (モバイル対応リバースプロキシ設定)
 - **DNS/VPN**: Tailscale VPN + dnsmasq + home.poco ドメイン統一アクセス
-- **Deployment**: セルフホスト（Ubuntu Server）→ クラウド移行可能
+- **Host Environment**: セルフホスト（Ubuntu Server）→ クラウド移行可能
 - **Device Support**: デスクトップ PC + モバイル端末（VPN経由統一アクセス）
 
 ### 1.3 システム構成図
@@ -167,43 +167,41 @@ Next.js Application
 - **CSRF対策**: State parameter + SameSite Cookie
 
 ### 3.3 スケーラビリティ
-- **水平スケール**: Docker Swarm/K8s対応
+- **水平スケール**: 負荷分散設定（将来検討）
 - **負荷分散**: Nginx upstream設定
 - **データベース**: Read Replica対応
 - **キューイング**: Celery分散ワーカー
 
 ### 3.4 可用性
 - **ヘルスチェック**: /health エンドポイント
-- **自動復旧**: Docker restart policy
+- **自動復旧**: systemd サービス管理
 - **ログ収集**: 集約ログシステム
 - **モニタリング**: Prometheus/Grafana対応
 
 ## 4. デプロイメントアーキテクチャ
 
 ### 4.1 開発環境
-```yaml
-# Docker Compose による統合開発環境
-services:
-  frontend: Next.js Dev Server
-  backend: FastAPI with hot reload
-  postgres: PostgreSQL 15
-  redis: Redis 7
+```bash
+# 直接実行による開発環境
+frontend: PORT=3001 npm run dev
+backend: python main.py (uvicorn)
+postgres: 未実装（将来検討）
+redis: 未実装（将来検討）
 ```
 
 ### 4.2 本番環境（セルフホスト）
-```yaml
-# Production Docker Compose
-services:
-  nginx: リバースプロキシ + SSL
-  frontend: Next.js Production Build
-  backend: FastAPI with Gunicorn
-  postgres: PostgreSQL with replication
-  redis: Redis with persistence
-  celery: Worker processes
+```bash
+# 現在の本番環境（直接実行）
+nginx: システムサービス（リバースプロキシ）
+frontend: PORT=3001 npm start (Next.js)
+backend: python main.py (FastAPI)
+postgres: 未実装
+redis: 未実装
+celery: 未実装
 ```
 
 ### 4.3 将来のクラウド移行
-- **Option 1**: Fly.io (コンテナネイティブ)
+- **Option 1**: Fly.io (将来Docker化後検討)
 - **Option 2**: Railway (フルマネージド)
 - **Option 3**: Oracle Cloud Free Tier
 - **Option 4**: AWS/GCP/Azure (エンタープライズ)
@@ -221,7 +219,7 @@ services:
 project-root/
 ├── frontend/          # Next.js アプリケーション
 ├── backend/           # FastAPI アプリケーション
-├── docker/            # Docker設定ファイル
+├── scripts/           # 起動・管理スクリプト
 ├── nginx/             # Nginx設定
 ├── scripts/           # デプロイ・管理スクリプト
 └── docs/              # ドキュメント
@@ -276,8 +274,8 @@ project-root/
 ## 8. 移行戦略
 
 ### 8.1 段階的成長パス
-1. **Phase 1**: 単一サーバー（Docker Compose）
-2. **Phase 2**: 複数サーバー（Docker Swarm）
+1. **Phase 1**: 単一サーバー（直接実行）← 現在
+2. **Phase 2**: Docker化検討（検討事項 No.1）
 3. **Phase 3**: マネージドサービス活用
 4. **Phase 4**: フルクラウドネイティブ
 
@@ -381,7 +379,7 @@ const response = await fetch(`/api/auth/mock-me`, {
 - Cloud Storage 連携
 
 #### 運用・監視 🚧 未実装
-- Docker Compose 本格運用設定
+- systemd サービス化検討
 - ヘルスチェック・監視システム
 - ログ収集・分析システム
 
@@ -390,6 +388,31 @@ const response = await fetch(`/api/auth/mock-me`, {
 1. **高優先**: PostgreSQL + Redis 実装 → 本格セッション管理
 2. **中優先**: Google OAuth 2.0 実装 → Mock認証からの脱却
 3. **低優先**: 監視・運用システム整備
+
+### 10.6 棚上げ検討事項
+
+#### Docker化・コンテナ化（検討事項 No.1）
+**詳細**: CLAUDE.md「今後の検討事項管理」参照
+
+**現在の方針**: 直接実行で十分、Docker化は不要
+**メリット**: 環境統一・並列開発対応・スケーラビリティ・障害耐性
+**検討条件**: 
+- 複数セッションでの並列開発が必要になった場合
+- チーム開発で環境統一が必要になった場合  
+- 本格運用でスケーラビリティが重要になった場合
+
+**技術的詳細**:
+```yaml
+# 将来のDocker構成例（参考）
+services:
+  nginx: リバースプロキシ + SSL
+  frontend: Next.js Production Build  
+  backend: FastAPI with Gunicorn
+  postgres: PostgreSQL with replication
+  redis: Redis with persistence
+```
+
+**重要**: 現在の検証環境では直接実行が最適解。Docker化は将来の要件次第で検討。
 
 ---
 
