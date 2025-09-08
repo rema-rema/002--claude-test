@@ -33,29 +33,38 @@
 
 #### インフラストラクチャ
 - **Container**: Docker + Docker Compose
-- **Reverse Proxy**: Nginx
-- **Deployment**: セルフホスト → クラウド移行可能
+- **Reverse Proxy**: Nginx (モバイル対応リバースプロキシ設定)
+- **DNS/VPN**: Tailscale VPN + dnsmasq + home.poco ドメイン統一アクセス
+- **Deployment**: セルフホスト（Ubuntu Server）→ クラウド移行可能
+- **Device Support**: デスクトップ PC + モバイル端末（VPN経由統一アクセス）
 
 ### 1.3 システム構成図
 
 ```mermaid
 graph TB
+    subgraph "VPN/Network Layer"
+        TailscaleVPN[Tailscale VPN Network]
+        DNSMasq[dnsmasq DNS Server]
+        HomePocoDomain[home.poco Domain]
+    end
+    
     subgraph "Client Layer"
-        Browser[Web Browser]
-        Mobile[Mobile Browser]
+        DesktopPC[Desktop PC Browser]
+        MobileBrowser[Mobile Browser VPN]
     end
     
     subgraph "Frontend (Next.js)"
         AppRouter[App Router]
-        RSC[React Server Components]
+        RSC[React Server Components] 
         ClientComp[Client Components]
-        APIClient[API Client Layer]
+        APIClient[API Client Layer - Relative Paths]
     end
     
     subgraph "API Gateway"
         Nginx[Nginx Reverse Proxy]
+        FrontendProxy[Frontend Proxy :3001]
+        APIProxy[API Proxy :8000]
         RateLimit[Rate Limiting]
-        SSL[SSL Termination]
     end
     
     subgraph "Backend Services"
@@ -77,13 +86,21 @@ graph TB
         Future_Cloud[Cloud Storage]
     end
     
-    Browser --> Nginx
-    Mobile --> Nginx
-    Nginx --> AppRouter
+    DesktopPC --> TailscaleVPN
+    MobileBrowser --> TailscaleVPN
+    TailscaleVPN --> DNSMasq
+    DNSMasq --> HomePocoDomain
+    HomePocoDomain --> Nginx
+    
+    Nginx --> FrontendProxy
+    Nginx --> APIProxy
+    FrontendProxy --> AppRouter
+    APIProxy --> FastAPI
+    
     AppRouter --> RSC
     RSC --> ClientComp
     ClientComp --> APIClient
-    APIClient --> FastAPI
+    APIClient -->|Relative /api/ calls| APIProxy
     
     FastAPI --> AuthService
     FastAPI --> BusinessLogic
@@ -282,8 +299,100 @@ project-root/
 - [FastAPI Documentation](https://fastapi.tiangolo.com)
 - [PostgreSQL JSONB Guide](https://www.postgresql.org/docs/current/datatype-json.html)
 
+## 10. 🚨 実装状況更新 - VPN/DNS/モバイル対応システム（2025-09-08）
+
+### 10.1 実装完了コンポーネント
+
+#### VPN/DNS Access System ✅ 完了
+- **実装場所**: `spec/kairo/vpn-dns-access/`
+- **実装内容**: Tailscale VPN + dnsmasq + home.poco ドメイン統一アクセス
+- **対応デバイス**: デスクトップPC + モバイル端末（VPN経由）
+- **重要修正**: モバイル端末のlocalhost問題解決済み
+
+#### 認証システム ✅ 完了
+- **ログインページ**: `/login` - Google OAuth風UI + Mock認証
+- **ダッシュボードページ**: `/dashboard` - ユーザー情報・システム状態表示
+- **API設計**: 相対パス (`/api/auth/*`) によるモバイル対応API呼び出し
+- **セッション管理**: HTTPOnly Cookie + JWT トークンベース
+
+#### nginx リバースプロキシ ✅ 完了
+```nginx
+# 実装済み設定: /etc/nginx/sites-available/home
+server {
+    listen 0.0.0.0:80;
+    server_name home.poco *.poco;
+    
+    location / {                    # Next.js Frontend
+        proxy_pass http://localhost:3001;
+    }
+    
+    location /api/ {                # FastAPI Backend
+        proxy_pass http://localhost:8000;
+    }
+}
+```
+
+### 10.2 技術的重要解決 - モバイル localhost 問題
+
+#### 問題概要
+モバイル端末からVPN経由で `http://home.poco` アクセス時、ログインボタンでネットワークエラー発生
+
+#### 根本原因
+```javascript
+// 問題のコード（修正前）
+const response = await fetch(`http://localhost:8000/api/auth/mock-me`, {
+// モバイルの "localhost" = モバイル端末自身 → サーバーが見つからない
+```
+
+#### 解決方法
+```javascript  
+// 修正後のコード
+const response = await fetch(`/api/auth/mock-me`, {
+// 相対パス → nginx が localhost:8000 に正しくプロキシ
+```
+
+#### 技術的メリット
+- **統一アクセス**: 全デバイスで `home.poco` ドメイン統一
+- **nginx活用**: リバースプロキシによるサービス分離 (3001/8000)
+- **スケーラビリティ**: マイクロサービス拡張に対応
+
+### 10.3 実装済みアーキテクチャフロー
+
+```
+[デスクトップPC/モバイル] 
+    ↓ Tailscale VPN接続
+[dnsmasq DNS Server]
+    ↓ home.poco ドメイン解決
+[nginx :80]
+    ├─ / → Next.js :3001 (フロントエンド)
+    └─ /api/ → FastAPI :8000 (バックエンド API)
+```
+
+### 10.4 未実装コンポーネント（将来実装予定）
+
+#### データストア層 🚧 未実装
+- PostgreSQL 15+ (JSONB活用) ← 現在Mock認証のみ
+- Redis 7+ (キャッシュ・セッション管理)
+- タスクキュー (Celery + Redis)
+
+#### 外部サービス連携 🚧 未実装  
+- Google OAuth 2.0 本格実装 ← 現在Mock認証
+- AI Services 連携
+- Cloud Storage 連携
+
+#### 運用・監視 🚧 未実装
+- Docker Compose 本格運用設定
+- ヘルスチェック・監視システム
+- ログ収集・分析システム
+
+### 10.5 次期実装優先度
+
+1. **高優先**: PostgreSQL + Redis 実装 → 本格セッション管理
+2. **中優先**: Google OAuth 2.0 実装 → Mock認証からの脱却
+3. **低優先**: 監視・運用システム整備
+
 ---
 
-**最終更新日**: 2025-08-29  
-**バージョン**: 2.0.0  
-**ステータス**: 確定
+**最終更新日**: 2025-09-08  
+**バージョン**: 3.0.0 (VPN/DNS/モバイル対応追加)  
+**ステータス**: 部分実装完了・継続開発中

@@ -19,8 +19,16 @@
 ### 1.3 ベースURL
 ```
 開発環境: http://localhost:8000
-本番環境: https://api.example.com
+本番環境: http://home.poco/api (VPN/DNS統一アクセス・nginx プロキシ経由)
+将来環境: https://api.example.com (SSL + 独自ドメイン)
 ```
+
+### 1.4 アクセス方式の特徴
+- **開発環境**: 直接FastAPIサーバーアクセス (ポート8000)
+- **本番環境**: nginx リバースプロキシ経由 (`home.poco/api/` → `localhost:8000`)
+  - **メリット**: フロントエンド・バックエンドの統一ドメイン
+  - **対応デバイス**: デスクトップPC + モバイル端末（VPN経由）
+  - **相対パス対応**: `/api/auth/login` 形式でAPIアクセス可能
 
 ## 2. API標準仕様
 
