@@ -17,11 +17,14 @@ export default function LoginPage() {
 
   const checkAuthStatus = async () => {
     try {
-      const currentHost = window.location.hostname;
-      const apiUrl = `http://${currentHost}:8000`;
-      const response = await fetch(`${apiUrl}/api/auth/mock-me`, {
+      const response = await fetch(`/api/auth/mock-me`, {
         credentials: 'include'
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
       
       if (data.is_authenticated) {
@@ -30,9 +33,10 @@ export default function LoginPage() {
         return;
       }
     } catch (error) {
-      console.log('Not authenticated');
+      console.error('Auth check error:', error);
     } finally {
-      setIsCheckingAuth(false);
+      // 必ずローディング状態を解除
+      setTimeout(() => setIsCheckingAuth(false), 100);
     }
   };
 
@@ -46,11 +50,7 @@ export default function LoginPage() {
     // テスト用の自動ログイン (後でGoogle OAuth実装予定)
     setIsButtonLoading(true);
     try {
-      // 動的にAPIエンドポイントを決定
-      const currentHost = window.location.hostname;
-      const apiUrl = `http://${currentHost}:8000`;
-      
-      const response = await fetch(`${apiUrl}/api/auth/mock-login`, {
+      const response = await fetch(`/api/auth/mock-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -83,12 +83,24 @@ export default function LoginPage() {
     }
   };
 
-  if (isCheckingAuth || isAuthenticated) {
+  // 認証チェック中またはすでに認証済みの場合
+  if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">認証状態を確認中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 認証済みの場合（フォールバック）
+  if (isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">ダッシュボードに移動中...</p>
         </div>
       </div>
     );

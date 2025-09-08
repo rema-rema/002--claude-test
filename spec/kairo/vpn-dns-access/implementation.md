@@ -21,6 +21,86 @@ DNS解決（dnsmasq）+ リバースプロキシ（nginx）+ アプリケーシ�
 
 ---
 
+## 🚨 重要更新: モバイル対応・ネットワークエラー修正（2025-09-08）
+
+### 更新概要
+- **問題**: モバイル端末からVPN経由でログイン時にネットワークエラー発生
+- **原因**: フロントエンド内でのhardcoded localhost:8000 URL
+- **解決**: 相対パス API呼び出し + nginx リバースプロキシ活用
+- **成果**: 全デバイス（PC・モバイル）で統一動作確認
+
+### 修正実装詳細
+
+#### 修正1: アプリケーション層をNext.js + FastAPIに拡張
+```bash
+# 既存Python HTTPServer(3000) → Next.js(3001) + FastAPI(8000)
+cd frontend
+PORT=3001 npm start &
+
+cd backend  
+python main.py &
+```
+
+#### 修正2: nginx設定更新 - モバイル対応リバースプロキシ
+**変更ファイル**: `/etc/nginx/sites-available/home`
+```nginx
+server {
+    listen 0.0.0.0:80;
+    server_name home.poco *.poco;
+    
+    # フロントエンド（Next.js）へのプロキシ
+    location / {
+        proxy_pass http://localhost:3001;
+        # ... proxy headers ...
+    }
+    
+    # バックエンドAPI（FastAPI）へのプロキシ ← 新規追加
+    location /api/ {
+        proxy_pass http://localhost:8000;
+        # ... proxy headers ...
+    }
+}
+```
+
+#### 修正3: フロントエンドコード - localhost:8000除去
+**修正ファイル**: `frontend/src/app/login/page.tsx`
+```javascript
+// Before（モバイルでエラー）
+const response = await fetch(`http://${currentHost}:8000/api/auth/mock-me`, {
+
+// After（全デバイス対応）
+const response = await fetch(`/api/auth/mock-me`, {
+```
+
+**修正ファイル**: `frontend/src/app/dashboard/page.tsx`
+```javascript
+// Before（モバイルでエラー）
+const response = await fetch(`http://${currentHost}:8000/api/auth/mock-me`, {
+await fetch(`http://${currentHost}:8000/api/auth/mock-logout`, {
+
+// After（全デバイス対応）
+const response = await fetch(`/api/auth/mock-me`, {
+await fetch(`/api/auth/mock-logout`, {
+```
+
+#### 修正4: 環境変数設定
+**変更ファイル**: `frontend/.env.local`
+```bash
+# Before
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# After  
+NEXT_PUBLIC_API_URL=http://home.poco
+```
+
+### 修正テスト結果
+- ✅ **デスクトップPC**: `http://home.poco` ログイン成功
+- ✅ **モバイル端末**: `http://home.poco` VPN経由ログイン成功  
+- ✅ **ダッシュボード**: 全デバイスで正常表示・ログアウト動作
+- ✅ **API通信**: nginx経由での正常プロキシ動作確認
+
+---
+
 ## 実装フェーズ詳細
 
 ### フェーズ1: DNS解決システム構築

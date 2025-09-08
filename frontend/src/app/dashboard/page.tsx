@@ -19,11 +19,7 @@ export default function DashboardPage() {
 
   const checkAuthAndLoadUser = async () => {
     try {
-      // 動的にAPIエンドポイントを決定
-      const currentHost = window.location.hostname;
-      const apiUrl = `http://${currentHost}:8000`;
-      
-      const response = await fetch(`${apiUrl}/api/auth/mock-me`, {
+      const response = await fetch(`/api/auth/mock-me`, {
         credentials: 'include'
       });
       const data = await response.json();
@@ -47,10 +43,7 @@ export default function DashboardPage() {
       setIsLoggingOut(true);
       
       // 動的にAPIエンドポイントを決定
-      const currentHost = window.location.hostname;
-      const apiUrl = `http://${currentHost}:8000`;
-      
-      await fetch(`${apiUrl}/api/auth/mock-logout`, {
+      await fetch(`/api/auth/mock-logout`, {
         method: 'POST',
         credentials: 'include'
       });
