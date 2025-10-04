@@ -6,6 +6,63 @@
 
 ---
 
+## 0. ネットワーク設定（IP固定化） - 2025-09-25追加
+
+### 0.1 現在の設定確認
+```bash
+# IPアドレス確認
+ip addr show ens33
+
+# デフォルトゲートウェイ確認
+ip route show default
+
+# DNS設定確認
+cat /etc/resolv.conf
+```
+
+### 0.2 netplanによるIP固定化（動作確認済み）
+```bash
+# 1. 固定IP設定ファイル作成
+sudo tee /etc/netplan/99-static.yaml << 'EOF'
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ens33:
+      addresses: [192.168.1.13/24]
+      gateway4: 192.168.1.1
+      nameservers:
+        addresses: [8.8.8.8, 8.8.4.4]
+EOF
+
+# 2. 古いNetworkManager設定をバックアップ
+sudo mv /etc/netplan/01-network-manager-all.yaml /etc/netplan/01-network-manager-all.yaml.bak
+
+# 3. 設定適用
+sudo netplan apply
+
+# 4. IP固定化確認
+ip addr show ens33 | grep 192.168.1.13
+```
+
+### 0.3 サービス状態確認
+```bash
+# systemd-networkd状態確認
+sudo systemctl status systemd-networkd
+
+# ネットワーク接続テスト
+ping -c 3 192.168.1.1  # ゲートウェイ
+ping -c 3 8.8.8.8      # 外部DNS
+nslookup home.poco 127.0.0.1  # DNS解決確認
+```
+
+**実行結果（2025-09-25確認済み）**:
+- IP: 192.168.1.13/24 固定完了
+- ゲートウェイ: 192.168.1.1 正常疎通
+- DNS解決: home.poco → 192.168.1.13 + 100.115.216.73
+
+---
+
 ## 1. DNS設定（dnsmasq）
 
 ### 1.1 初期セットアップ
