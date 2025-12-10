@@ -1,4 +1,4 @@
-# Claude-Discord Bridge
+# Claude-Discord Bridge (https://github.com/yamkz/claude-discord-bridge?tab=readme-ov-file)
 
 A portable bridge tool that seamlessly connects Claude Code with Discord, supporting multi-session environments, slash commands, and multi-image attachments.
 
