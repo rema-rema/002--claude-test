@@ -406,8 +406,14 @@ class FlaskBridgeApp:
 
         音声認識されたテキストをClaude Codeセッションに転送
         """
+        import time as time_module
+        t_start = time_module.time()
+
         try:
             data = request.json
+            t_parse = time_module.time()
+            logger.info(f"[TIMING] Flask受信→パース: {(t_parse - t_start)*1000:.1f}ms")
+
             if not data:
                 return jsonify({'error': 'No data provided'}), 400
 
@@ -432,6 +438,7 @@ class FlaskBridgeApp:
             logger.info(f"Voice input from user {user_id}: {text}")
 
             # 音声入力をテキストチャットにも表示（会話履歴用）
+            t_before_discord = time_module.time()
             try:
                 sessions = self.settings.list_sessions()
                 if sessions:
@@ -439,8 +446,21 @@ class FlaskBridgeApp:
                     post_to_discord(channel_id, f"🎤 {text}")
             except Exception as e:
                 logger.warning(f"Failed to post voice text to Discord: {e}")
+            t_after_discord = time_module.time()
+            logger.info(f"[TIMING] Discord投稿: {(t_after_discord - t_before_discord)*1000:.1f}ms")
 
+            t_before_forward = time_module.time()
             success, error_msg = self.message_forwarder.forward_message(voice_message, session_num)
+            t_after_forward = time_module.time()
+            logger.info(f"[TIMING] tmux転送: {(t_after_forward - t_before_forward)*1000:.1f}ms")
+            logger.info(f"[TIMING] Flask合計: {(t_after_forward - t_start)*1000:.1f}ms")
+
+            # タイムスタンプをファイルに書き込み（Claude Code側で読み取り用）
+            try:
+                with open('/tmp/voice-timing.txt', 'w') as f:
+                    f.write(f"{t_after_forward}")
+            except Exception as e:
+                logger.warning(f"Failed to write timing file: {e}")
 
             if success:
                 print(f"🎤 Voice input forwarded to session {session_num}: {text[:50]}...")

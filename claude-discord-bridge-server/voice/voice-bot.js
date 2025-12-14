@@ -739,7 +739,9 @@ async function flushSendBuffer() {
     }
 
     // 従来モード: Flask API経由
+    const flaskStartTime = Date.now();
     console.log(`[Claude] Sending to Flask API: "${combinedText}"`);
+    console.log(`[TIMING] Flask送信開始: ${new Date().toISOString()}`);
 
     try {
         const response = await fetch(`${config.FLASK_SERVER_URL}/voice-input`, {
@@ -747,6 +749,9 @@ async function flushSendBuffer() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: combinedText, userId })
         });
+
+        const flaskEndTime = Date.now();
+        console.log(`[TIMING] Flask応答受信: ${flaskEndTime - flaskStartTime}ms`);
 
         if (!response.ok) {
             console.error('[Claude] Flask API error:', response.status);

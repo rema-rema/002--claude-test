@@ -18,7 +18,26 @@ from config.settings import SettingsManager
 from src.session_manager import SessionManager
 
 def send_to_tts(text: str):
-    """Send text to Voice Bot TTS API for audio playback"""
+    """Send text to Voice Bot TTS API for audio playback (non-blocking)"""
+    import threading
+
+    def _send_tts_async(clean_text: str):
+        """Background thread for TTS request"""
+        try:
+            response = requests.post(
+                "http://localhost:3001/speak",
+                json={"text": clean_text},
+                timeout=5
+            )
+            if response.status_code == 200:
+                print(f"[TTS] Queued: {clean_text[:50]}...")
+            else:
+                print(f"[TTS] Failed: {response.status_code}")
+        except requests.exceptions.ConnectionError:
+            print("[TTS] Voice Bot not running")
+        except Exception as e:
+            print(f"[TTS] Error: {e}")
+
     # TTS用にテキストをクリーンアップ
     clean_text = re.sub(r'<@\d+>\s*', '', text).strip()
     clean_text = re.sub(r'```[\s\S]*?```', '', clean_text)  # コードブロック除去
@@ -34,24 +53,16 @@ def send_to_tts(text: str):
     if clean_text.startswith('🎤'):
         return
 
+    # ツール通知（🔧で始まる）はTTS不要
+    if clean_text.startswith('🔧'):
+        return
+
     # 長すぎる場合は切り詰め（TTS用）
     if len(clean_text) > 200:
         clean_text = clean_text[:200] + "...以下省略"
 
-    try:
-        response = requests.post(
-            "http://localhost:3001/speak",
-            json={"text": clean_text},
-            timeout=5
-        )
-        if response.status_code == 200:
-            print(f"[TTS] Queued: {clean_text[:50]}...")
-        else:
-            print(f"[TTS] Failed: {response.status_code}")
-    except requests.exceptions.ConnectionError:
-        print("[TTS] Voice Bot not running")
-    except Exception as e:
-        print(f"[TTS] Error: {e}")
+    # TTS送信（同期で実行 - dpコマンドが終了する前に完了させる）
+    _send_tts_async(clean_text)
 
 def post_to_discord(channel_id: str, message: str):
     """Post a message to Discord channel"""
