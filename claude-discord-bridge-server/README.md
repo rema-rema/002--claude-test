@@ -1,73 +1,121 @@
-# Claude-Discord Bridge (https://github.com/yamkz/claude-discord-bridge?tab=readme-ov-file)
+# Claude-Discord Bridge + Voice
 
-A portable bridge tool that seamlessly connects Claude Code with Discord, supporting multi-session environments, slash commands, and multi-image attachments.
+Discord経由でClaude Codeと対話するブリッジツール。テキストチャット + 音声会話に対応。
 
-**[日本語版 (Japanese) / 日本語ドキュメント](./README_ja.md)**
+## 機能
 
-## Key Features
-- **Scalable Multi-Session**: Simply create one Discord bot, and Claude Code sessions are automatically spawned each time you add a channel.
-- **Image Attachment Support**: Complete support for image analysis workflows
-- **Slash Command Support**: Commands can also be executed via Discord
-- **Fully Automated Setup**: One-command environment detection and one-click deployment
-- **Portable Design**: No dependency on absolute paths or system-specific settings
+### テキストブリッジ
+- **マルチセッション**: 複数Discordチャンネルで独立したClaude Codeセッション
+- **画像添付対応**: 画像分析ワークフロー
+- **スラッシュコマンド**: Discord経由でコマンド実行
 
-## Operation Overview
-1. Create a Discord Bot. Grant permissions and issue a Bot token
-2. Launch install.sh to start installation.
-3. During installation, you can configure Bot token and up to 3 Channel IDs.
-   (Additional channels can be added later with vai add-session {channel id})
-4. Add Discord response rules to CLAUDE.md.
-5. Start with "vai".
-6. Use "vai view" to directly operate and monitor multiple sessions in real-time with tmux
-7. Chat from Discord → Responses come from Claude Code.
+### 音声ブリッジ (Voice Bridge)
+- **リアルタイム音声認識**: Whisper + Silero VADによる高速STT
+- **音声合成**: VOICEVOX連携によるTTS
+- **Discord音声チャンネル連携**: 音声で直接Claude Codeと対話
 
-## System Requirements
-- macOS or Linux
+## アーキテクチャ
+
+```
+Discord Text Channel ←→ Flask API ←→ Claude Code (tmux)
+Discord Voice Channel ←→ Voice Bot ←→ STT Server (Whisper)
+                              ↓
+                         VOICEVOX (TTS)
+```
+
+## システム要件
+
+- Linux / macOS
 - Python 3.8+
+- Node.js 18+
 - tmux
-- Discord Bot Token (create at [Discord Developer Portal](https://discord.com/developers/applications))
+- CUDA対応GPU（音声認識用、推奨）
+- VOICEVOX（音声合成用）
+- Discord Bot Token
 
-## Installation / Uninstallation
+## クイックスタート
+
+### 1. インストール
 ```bash
 git clone https://github.com/yamkz/claude-discord-bridge.git
 cd claude-discord-bridge
 ./install.sh
 ```
 
+### 2. 環境設定
+`.env`ファイルを設定:
 ```bash
-cd claude-discord-bridge
-./uninstall.sh
+CC_DISCORD_TOKEN=your_bot_token
+CC_DISCORD_CHANNEL_ID=your_channel_id
+CC_DISCORD_USER_ID=your_user_id
+VOICE_CHANNEL_ID=your_voice_channel_id
 ```
 
-## Quick Start
-**1. Add to CLAUDE.md**
-Add the following configuration to your workspace CLAUDE.md file:
-[CLAUDE.md Configuration Example](./CLAUDE.md)
+### 3. 起動
 
-**2. Start Bridge and Check Session Status**
+**全サービス起動（音声認識含む）:**
 ```bash
-vai
-vai view
+./start-all.sh
 ```
 
-**3. Test on Discord**
-
-**4. Stop**
+**テキストブリッジのみ:**
 ```bash
-vexit
+./start-bridge.sh
 ```
 
-## Command List
-### Basic Commands
-- `vai` - Start all functions (Discord bot + routing + Claude Code session group)
-- `vai status` - Check operational status
-- `vai doctor` - Run environment diagnostics
-- `vai view` - Display all sessions in real-time
-  (Currently only supports up to 6 screen display)
-- `vexit` - Stop all functions
-- `vai add-session <channel_id>` - Add channel ID
-- `vai list-session` - List channel IDs
-- `dp [session] "message"` - Send message to Discord
+### 4. 停止
+```bash
+./stop-all.sh     # 全サービス停止
+./stop-bridge.sh  # テキストブリッジのみ停止
+```
 
-## License
-MIT License - See LICENSE file for details
+### 5. 再起動
+```bash
+./restart-all.sh
+```
+
+## コマンド一覧
+
+### サービス管理
+| コマンド | 説明 |
+|---------|------|
+| `./start-all.sh` | 全サービス起動（STT + Voice + Bridge） |
+| `./stop-all.sh` | 全サービス停止 |
+| `./restart-all.sh` | 全サービス再起動 |
+| `./start-bridge.sh` | テキストブリッジのみ起動 |
+| `./bin/vai status` | サービス状態確認 |
+| `./bin/vai doctor` | 環境診断 |
+
+### セッション管理
+| コマンド | 説明 |
+|---------|------|
+| `./bin/vai view` | 全セッションをtmuxで表示 |
+| `./bin/vai add-session <channel_id>` | セッション追加 |
+| `./bin/vai remove-session <id>` | セッション削除 |
+| `./bin/vai recover <id>` | セッション復旧 |
+| `./bin/vai list-sessions` | セッション一覧 |
+| `./bin/vexit` | 全セッション停止 |
+
+### Discord送信
+| コマンド | 説明 |
+|---------|------|
+| `./bin/dp "message"` | デフォルトセッションに送信 |
+| `./bin/dp 2 "message"` | セッション2に送信 |
+| `./bin/dp <channel_id> "message"` | チャンネルID指定で送信 |
+
+## ポート一覧
+
+| サービス | ポート | 用途 |
+|---------|--------|------|
+| Voice Bot API | 3001 | TTS/音声チャンネル制御 |
+| Flask API | 5001 | メッセージルーティング |
+| STT Server | 8765 | 音声認識 (WebSocket) |
+| VOICEVOX | 50021 | 音声合成 |
+
+## ドキュメント
+
+- [音声ブリッジ仕様書](./docs/voice-bridge-spec.md) - 詳細なシステム仕様
+
+## ライセンス
+
+MIT License
