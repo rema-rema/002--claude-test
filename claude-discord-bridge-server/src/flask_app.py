@@ -37,6 +37,7 @@ except ImportError:
     sys.exit(1)
 
 from config.settings import SettingsManager
+from src.discord_post import post_to_discord
 
 # ログ設定（本番環境では外部設定ファイルから読み込み可能）
 logging.basicConfig(
@@ -229,6 +230,9 @@ class FlaskBridgeApp:
         
         # ステータス確認エンドポイント
         self.app.route('/status', methods=['GET'])(self.get_status)
+
+        # 音声入力エンドポイント（Voice Bridge用）
+        self.app.route('/voice-input', methods=['POST'])(self.handle_voice_input)
     
     def health_check(self) -> Response:
         """
@@ -379,7 +383,7 @@ class FlaskBridgeApp:
     def get_status(self) -> Response:
         """
         アプリケーション状態の取得
-        
+
         拡張ポイント：
         - 詳細システム情報
         - パフォーマンス指標
@@ -393,8 +397,64 @@ class FlaskBridgeApp:
             'uptime': datetime.now().isoformat(),  # 拡張：稼働時間計算
             'version': '1.0.0'
         }
-        
+
         return jsonify(status_data)
+
+    def handle_voice_input(self) -> Response:
+        """
+        音声入力処理エンドポイント（Voice Bridge用）
+
+        音声認識されたテキストをClaude Codeセッションに転送
+        """
+        try:
+            data = request.json
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+
+            text = data.get('text', '')
+            user_id = data.get('userId', '')
+
+            if not text:
+                return jsonify({'error': 'No text provided'}), 400
+
+            # ノイズワードをフィルタ
+            noise_words = ['[音楽]', '(音楽)', '(笑)', '[拍手]', '[BGM]', 'ご視聴ありがとうございました']
+            if text.strip() in noise_words:
+                logger.info(f"Filtered noise word: {text}")
+                return jsonify({'status': 'filtered', 'reason': 'noise_word'})
+
+            # セッション1に転送（デフォルト）
+            session_num = 1
+
+            # 音声入力であることを示すプレフィックス追加
+            voice_message = f"Discordからの通知: {text} session={session_num}"
+
+            logger.info(f"Voice input from user {user_id}: {text}")
+
+            # 音声入力をテキストチャットにも表示（会話履歴用）
+            try:
+                sessions = self.settings.list_sessions()
+                if sessions:
+                    channel_id = sessions[0][1]  # session 1のチャンネルID
+                    post_to_discord(channel_id, f"🎤 {text}")
+            except Exception as e:
+                logger.warning(f"Failed to post voice text to Discord: {e}")
+
+            success, error_msg = self.message_forwarder.forward_message(voice_message, session_num)
+
+            if success:
+                print(f"🎤 Voice input forwarded to session {session_num}: {text[:50]}...")
+                return jsonify({
+                    'status': 'forwarded',
+                    'session': session_num,
+                    'text': text[:100]
+                })
+            else:
+                return jsonify({'error': error_msg}), 500
+
+        except Exception as e:
+            logger.error(f"Voice input error: {e}", exc_info=True)
+            return jsonify({'error': 'Internal server error'}), 500
     
     def run(self, host: str = '127.0.0.1', port: Optional[int] = None):
         """

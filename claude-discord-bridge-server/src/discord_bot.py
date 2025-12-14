@@ -271,7 +271,10 @@ class ClaudeCLIBot(commands.Bot):
         - ブラックリストチェック
         """
         # Bot自身のメッセージは無視
+        # 🎤プレフィックスもFlask直接転送に変更したため、discord-bridge経由は不要
         if message.author == self.user:
+            if message.content.startswith('🎤'):
+                logger.info(f'音声入力メッセージ（ログのみ、処理スキップ）: {message.content[:50]}...')
             return False
         
         # Discord標準コマンドの処理

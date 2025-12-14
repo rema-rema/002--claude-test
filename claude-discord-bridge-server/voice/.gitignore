@@ -1,0 +1,39 @@
+# Environment variables (sensitive)
+.env
+.env.local
+.env.*.local
+
+# Python virtual environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Node.js
+node_modules/
+
+# Logs
+*.log
+/tmp/
+
+# Debug files
+/tmp/voice-debug/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Whisper models (large files)
+*.bin
+*.pt
+
+# Temporary audio files
+*.wav
+*.pcm
+*.mp3
+whisper_streaming_lib/

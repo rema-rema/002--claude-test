@@ -70,8 +70,19 @@ class FileValidator:
     - カスタム検証ルール
     """
     
-    # サポートする画像形式（拡張可能）
-    SUPPORTED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff'}
+    # サポートするファイル形式（拡張可能）
+    SUPPORTED_EXTENSIONS = {
+        # 画像
+        '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.svg', '.ico',
+        # ドキュメント
+        '.md', '.txt', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.json', '.xml',
+        # コード
+        '.py', '.js', '.ts', '.jsx', '.tsx', '.html', '.css', '.scss', '.java', '.c', '.cpp', '.h', '.go', '.rs', '.rb', '.php', '.sh', '.bash', '.zsh', '.yaml', '.yml', '.toml', '.ini', '.conf', '.env',
+        # アーカイブ
+        '.zip', '.tar', '.gz', '.7z', '.rar',
+        # その他
+        '.log', '.sql',
+    }
     
     # ファイルサイズ制限（Discord制限に準拠、将来は設定可能）
     MAX_FILE_SIZE = 8 * 1024 * 1024  # 8MB

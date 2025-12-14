@@ -1,0 +1,963 @@
+/**
+ * Voice Bot - Discord音声チャンネル連携
+ *
+ * - Discord音声チャンネルに参加
+ * - テキストをTTSで音声に変換して再生
+ * - 音声受信 → STT → Claude送信
+ * - HTTP APIでテキスト受信
+ */
+
+require('dotenv').config();
+
+const { Client, GatewayIntentBits } = require('discord.js');
+const {
+    joinVoiceChannel,
+    createAudioPlayer,
+    createAudioResource,
+    AudioPlayerStatus,
+    VoiceConnectionStatus,
+    entersState,
+    StreamType,
+    EndBehaviorType
+} = require('@discordjs/voice');
+const express = require('express');
+const { Readable } = require('stream');
+const fs = require('fs');
+const { execSync } = require('child_process');
+const config = require('./config');
+const { textToSpeech, healthCheck } = require('./tts-client');
+const { speechToText, healthCheck: sttHealthCheck, killAllProcesses: killAllWhisperProcesses, getActiveCount: getWhisperActiveCount } = require('./stt-client');
+const { getStreamingSTTClient } = require('./streaming-stt-client');
+const { streamClaude, clearHistory } = require('./claude-streaming');
+const prism = require('prism-media');
+
+// 環境変数でストリーミングClaude有効化
+const USE_STREAMING_CLAUDE = process.env.USE_STREAMING_CLAUDE === 'true';
+
+// ストリーミングSTTモード（環境変数で切り替え）
+const USE_STREAMING_STT = process.env.USE_STREAMING_STT === 'true';
+let streamingSTTClient = null;
+
+// Discord Client
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildVoiceStates
+    ]
+});
+
+// Audio Player
+const player = createAudioPlayer();
+let connection = null;
+
+// 音声キュー（先読みTTS対応）
+const textQueue = [];           // テキストキュー
+const audioQueue = [];          // 合成済み音声キュー
+let isSpeaking = false;
+let isPrefetching = false;      // 先読み中フラグ
+
+// 音声受信状態
+let isListening = false;
+let listeningUserId = null;
+const audioBuffers = new Map();  // userId -> chunks[]
+
+/**
+ * TTS再生を停止（割り込み用）
+ */
+function stopSpeaking() {
+    if (isSpeaking) {
+        player.stop();
+        console.log('[TTS] Interrupted by user');
+    }
+    // キューもクリア
+    textQueue.length = 0;
+    audioQueue.length = 0;
+    isSpeaking = false;
+    isPrefetching = false;
+}
+
+/**
+ * 先読みTTS: テキストキューから音声を合成してaudioQueueに追加
+ */
+async function prefetchAudio() {
+    if (isPrefetching || textQueue.length === 0) return;
+
+    isPrefetching = true;
+    const text = textQueue.shift();
+
+    try {
+        console.log(`[TTS] Prefetching: "${text.substring(0, 30)}..."`);
+        const audioBuffer = await textToSpeech(text);
+        audioQueue.push({ text, audioBuffer });
+        console.log(`[TTS] Prefetched (queue: ${audioQueue.length})`);
+
+        // 再生中でなければ再生開始
+        if (!isSpeaking) {
+            playNextAudio();
+        }
+    } catch (error) {
+        console.error('[TTS] Prefetch error:', error.message);
+    } finally {
+        isPrefetching = false;
+        // 次の先読みを開始
+        if (textQueue.length > 0) {
+            prefetchAudio();
+        }
+    }
+}
+
+/**
+ * 音声キューから再生
+ */
+async function playNextAudio() {
+    if (isSpeaking || audioQueue.length === 0) {
+        // 音声がないがテキストがある場合は先読み待ち
+        if (textQueue.length > 0 && !isPrefetching) {
+            prefetchAudio();
+        }
+        return;
+    }
+
+    isSpeaking = true;
+    const { text, audioBuffer } = audioQueue.shift();
+
+    try {
+        console.log(`[TTS] Speaking: "${text.substring(0, 50)}..."`);
+
+        const stream = Readable.from(audioBuffer);
+        const resource = createAudioResource(stream, {
+            inputType: StreamType.Arbitrary
+        });
+
+        player.play(resource);
+
+        // 再生開始したら次の文を先読み
+        if (textQueue.length > 0 && !isPrefetching) {
+            prefetchAudio();
+        }
+    } catch (error) {
+        console.error('[TTS] Error:', error.message);
+        isSpeaking = false;
+        playNextAudio();
+    }
+}
+
+/**
+ * 音声キューを処理（後方互換性のため維持）
+ */
+async function processQueue() {
+    playNextAudio();
+}
+
+// 再生完了時の処理
+player.on(AudioPlayerStatus.Idle, () => {
+    isSpeaking = false;
+    processQueue();
+});
+
+player.on('error', error => {
+    console.error('[Player] Error:', error.message);
+    isSpeaking = false;
+    processQueue();
+});
+
+/**
+ * 音声チャンネルに参加
+ */
+async function joinChannel(channelId) {
+    console.log(`[Voice] Attempting to fetch channel: ${channelId}`);
+    let channel;
+    try {
+        channel = await client.channels.fetch(channelId, { force: true });
+        console.log(`[Voice] Fetched channel:`, channel ? `${channel.name} (type: ${channel.type})` : 'null');
+    } catch (fetchError) {
+        console.error(`[Voice] Fetch error:`, fetchError.message);
+        throw new Error(`Cannot fetch channel ${channelId}: ${fetchError.message}`);
+    }
+
+    if (!channel) {
+        throw new Error(`Channel not found: ${channelId}`);
+    }
+
+    if (!channel.isVoiceBased()) {
+        throw new Error(`Not a voice channel: ${channelId} (type: ${channel.type})`);
+    }
+
+    connection = joinVoiceChannel({
+        channelId: channel.id,
+        guildId: channel.guild.id,
+        adapterCreator: channel.guild.voiceAdapterCreator,
+        selfDeaf: false,  // 音声受信を有効化
+        selfMute: false,
+        // DAVE Protocol対応: 復号失敗時の耐性を上げる
+        decryptionFailureTolerance: 100
+    });
+
+    connection.subscribe(player);
+
+    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+    console.log(`[Voice] Joined channel: ${channel.name}`);
+
+    // 音声受信イベントのセットアップ
+    setupVoiceReceiver(connection);
+
+    return connection;
+}
+
+/**
+ * 音声受信のセットアップ（デバウンス付きVAD）
+ *
+ * 問題: Discord.jsのspeakingイベントが不安定で、1回の発話が複数イベントに分割される
+ * 解決: 発話終了後2秒待ってからSTT処理。その間に新しい発話があれば同じバッファに追加
+ */
+
+// ユーザーごとの音声バッファと処理タイマー
+const userAudioState = new Map();  // userId -> { chunks: [], timer: null, processing: false, activeStream: null }
+
+const SILENCE_TIMEOUT = 1500;  // 1.5秒の無音で発話終了と判定（長文対応）
+
+function setupVoiceReceiver(conn) {
+    const receiver = conn.receiver;
+
+    console.log('[Voice] Setting up voice receiver with debounced VAD...');
+
+    receiver.speaking.on('start', (userId) => {
+        // ユーザーが話し始めたらTTS再生を停止（割り込み）
+        if (isSpeaking) {
+            stopSpeaking();
+        }
+
+        if (!isListening) {
+            return;
+        }
+        if (listeningUserId && listeningUserId !== userId) {
+            return;
+        }
+
+        // 既存のタイマーをキャンセル（発話継続中）
+        let state = userAudioState.get(userId);
+        if (state && state.timer) {
+            clearTimeout(state.timer);
+            state.timer = null;
+            console.log(`[VAD] User ${userId} continued speaking (timer cancelled)`);
+        }
+
+        // 処理中なら新しいストリームを開始しない
+        if (state && state.processing) {
+            console.log(`[VAD] User ${userId} speaking but still processing previous`);
+            return;
+        }
+
+        // アクティブなストリームがあれば再利用（リスナー追加を防ぐ）
+        if (state && state.activeStream) {
+            console.log(`[VAD] User ${userId} continued speaking (reusing stream)`);
+            return;
+        }
+
+        // 新しい発話開始（または継続）
+        if (!state) {
+            state = { chunks: [], timer: null, processing: false, activeStream: null, utteranceStartTime: Date.now() };
+            userAudioState.set(userId, state);
+            console.log(`[VAD] User ${userId} started new utterance`);
+        }
+
+        // 音声ストリーム取得
+        const opusStream = receiver.subscribe(userId, {
+            end: {
+                behavior: EndBehaviorType.AfterSilence,
+                duration: 500  // 500msの無音でストリーム終了
+            }
+        });
+
+        const decoder = new prism.opus.Decoder({
+            rate: 48000,
+            channels: 2,
+            frameSize: 960
+        });
+
+        const audioStream = opusStream.pipe(decoder);
+
+        // アクティブなストリームとして追跡
+        state.activeStream = audioStream;
+
+        audioStream.on('data', (chunk) => {
+            if (state && !state.processing) {
+                state.chunks.push(chunk);
+
+                // ストリーミングSTTモードの場合、リアルタイムで送信
+                if (USE_STREAMING_STT && streamingSTTClient && streamingSTTClient.isConnected()) {
+                    const converted = convertTo16kMono(chunk);
+                    streamingSTTClient.sendAudioChunk(converted);
+                }
+            }
+        });
+
+        audioStream.on('end', () => {
+            // ストリームをクリア
+            if (state) {
+                state.activeStream = null;
+            }
+
+            // ストリーム終了時、タイマーをセットして待機
+            // タイムアウトしたら発話終了とみなしてSTT処理
+            if (state && !state.processing && state.chunks.length > 0) {
+                console.log(`[VAD] User ${userId} stream ended, waiting ${SILENCE_TIMEOUT}ms for more...`);
+
+                state.timer = setTimeout(async () => {
+                    await processUserUtterance(userId, state);
+                }, SILENCE_TIMEOUT);
+            }
+        });
+
+        audioStream.on('error', (err) => {
+            console.error(`[VAD] Stream error for user ${userId}:`, err.message);
+            if (state) {
+                state.activeStream = null;
+            }
+        });
+    });
+}
+
+/**
+ * ユーザーの発話をSTT処理
+ */
+async function processUserUtterance(userId, state) {
+    if (!state || state.processing || state.chunks.length === 0) return;
+
+    state.processing = true;
+    state.timer = null;
+
+    const chunks = state.chunks;
+    const sttStartTime = Date.now();
+
+    // VAD待機時間を計測（発話開始→STT開始）
+    const vadLatency = state.utteranceStartTime ? ((sttStartTime - state.utteranceStartTime) / 1000).toFixed(2) : 'N/A';
+    console.log(`[VAD] Processing utterance: ${chunks.length} chunks`);
+    console.log(`[LATENCY] VAD待機: ${vadLatency}s (発話開始→STT開始)`);
+
+    // ストリーミングSTTモードの場合、クライアントVADでsilence検出したらendを送信
+    if (USE_STREAMING_STT && streamingSTTClient && streamingSTTClient.isConnected()) {
+        console.log('[StreamingSTT] Client VAD silence detected, sending end to server');
+        streamingSTTClient.endUtterance();
+        // 状態をリセットして次の発話を受け入れられるようにする
+        state.processing = false;
+        state.chunks = [];
+        state.utteranceStartTime = null;
+        return;
+    }
+
+    try {
+        const text = await processAudioToText(chunks);
+        const sttEndTime = Date.now();
+        const sttLatency = ((sttEndTime - sttStartTime) / 1000).toFixed(2);
+        console.log(`[STT] processAudioToText returned: "${text}"`);
+        console.log(`[LATENCY] STT処理: ${sttLatency}s (whisper変換)`);
+
+        if (text && text.trim()) {
+            // ノイズワードフィルタ
+            const noisePatterns = ['音楽', '笑', '笑い声', '拍手', 'BGM', 'ご視聴ありがとうございました', '知事', 'チャンネル登録', '高評価', 'コメントをお願い', '音声なし'];
+            const trimmedText = text.trim();
+            const strippedText = trimmedText.replace(/[\(\)\[\]（）「」『』]/g, '');
+
+            if (noisePatterns.some(pattern => strippedText === pattern || strippedText.includes(pattern))) {
+                console.log(`[STT] Filtered noise: "${text}"`);
+            } else if (strippedText.length <= 3 || /^[\(\)\[\]（）「」『』]+$/.test(trimmedText)) {
+                console.log(`[STT] Filtered short/bracket: "${text}"`);
+            } else {
+                console.log(`[STT] Recognized: "${text}"`);
+                const totalLatency = state.utteranceStartTime ? ((sttEndTime - state.utteranceStartTime) / 1000).toFixed(2) : 'N/A';
+                console.log(`[LATENCY] 合計(発話→テキスト): ${totalLatency}s`);
+                await sendToClaude(text, userId);
+            }
+        }
+    } catch (error) {
+        console.error('[STT] Error:', error.message);
+    } finally {
+        // 状態をリセット
+        userAudioState.delete(userId);
+    }
+}
+
+/**
+ * PCMチャンクを16kHz monoに変換してストリーミングSTTに送信
+ * @param {Buffer} chunk - 48kHz stereo s16le PCMデータ
+ * @returns {Buffer} - 16kHz mono s16le PCMデータ
+ */
+function convertTo16kMono(chunk) {
+    // 48kHz stereo → 16kHz mono (3倍ダウンサンプル、左チャンネルのみ)
+    const samples = chunk.length / 4;  // 16bit * 2ch = 4 bytes per sample
+    const outSamples = Math.floor(samples / 3);  // 48k/16k = 3
+    const output = Buffer.alloc(outSamples * 2);  // 16bit mono
+
+    for (let i = 0; i < outSamples; i++) {
+        const srcIdx = i * 3 * 4;  // 元サンプルの位置
+        // 左チャンネルのみ取得
+        output.writeInt16LE(chunk.readInt16LE(srcIdx), i * 2);
+    }
+
+    return output;
+}
+
+/**
+ * ストリーミングSTTクライアントを初期化
+ * テキスト安定性ベースのVAD: partialが一定時間変化しなければ発話終了と判断
+ */
+// テキスト安定性VAD用の状態
+let streamingVADState = {
+    lastPartialText: '',
+    accumulatedText: '',  // 蓄積されたテキスト
+    lastPartialTime: 0,
+    stabilityTimer: null,
+    utteranceStartTime: null,
+    isProcessing: false
+};
+const TEXT_STABILITY_TIMEOUT = 1500;  // partialが1500ms変化しなければ発話終了（高速化）
+
+// Final結合用の状態（セマンティック検出対応）
+let finalAccumulator = {
+    texts: [],           // 蓄積されたfinalテキスト
+    timer: null,         // 結合タイマー
+    firstFinalTime: null // 最初のfinal受信時刻
+};
+const FINAL_MERGE_TIMEOUT_COMPLETE = 500;    // 文が完結している場合: 0.5秒待機
+const FINAL_MERGE_TIMEOUT_INCOMPLETE = 3000; // 文が未完結の場合: 3秒待機
+
+/**
+ * 文が完結しているかをセマンティック判定
+ * 句点、疑問符、感嘆符で終わっていれば完結とみなす
+ */
+function isSentenceComplete(text) {
+    if (!text) return false;
+    const trimmed = text.trim();
+    // 日本語・英語の文末記号をチェック
+    const endMarkers = ['。', '？', '！', '?', '!', '.'];
+    return endMarkers.some(marker => trimmed.endsWith(marker));
+}
+
+function initStreamingSTT() {
+    if (!USE_STREAMING_STT) return;
+
+    streamingSTTClient = getStreamingSTTClient();
+
+    // finalイベント（サーバーからのend応答）- セマンティック検出対応
+    streamingSTTClient.on('final', async (text) => {
+        if (!text || !text.trim()) return;
+
+        const now = Date.now();
+        const latency = streamingVADState.utteranceStartTime ?
+            ((now - streamingVADState.utteranceStartTime) / 1000).toFixed(2) : 'N/A';
+        console.log(`[StreamingSTT] Final from server: "${text}"`);
+        console.log(`[LATENCY] 発話→Final取得: ${latency}s`);
+
+        // Final蓄積
+        if (finalAccumulator.firstFinalTime === null) {
+            finalAccumulator.firstFinalTime = now;
+        }
+        finalAccumulator.texts.push(text);
+
+        // 結合テキストでセマンティック判定
+        const mergedText = finalAccumulator.texts.join('');
+        const isComplete = isSentenceComplete(mergedText);
+        const timeout = isComplete ? FINAL_MERGE_TIMEOUT_COMPLETE : FINAL_MERGE_TIMEOUT_INCOMPLETE;
+
+        console.log(`[Semantic] Text: "${mergedText.slice(-30)}" | Complete: ${isComplete} | Timeout: ${timeout}ms`);
+
+        // 既存タイマーをクリア
+        if (finalAccumulator.timer) {
+            clearTimeout(finalAccumulator.timer);
+        }
+
+        // セマンティック判定に基づいてタイムアウトを設定
+        finalAccumulator.timer = setTimeout(async () => {
+            if (finalAccumulator.texts.length === 0) return;
+
+            const finalMergedText = finalAccumulator.texts.join('');
+            const totalLatency = finalAccumulator.firstFinalTime ?
+                ((Date.now() - finalAccumulator.firstFinalTime) / 1000).toFixed(2) : 'N/A';
+
+            console.log(`[FinalMerge] Merging ${finalAccumulator.texts.length} finals: "${finalMergedText}"`);
+            console.log(`[FinalMerge] Total accumulation time: ${totalLatency}s`);
+
+            // 蓄積をリセット
+            finalAccumulator.texts = [];
+            finalAccumulator.timer = null;
+            finalAccumulator.firstFinalTime = null;
+
+            // 処理
+            if (!streamingVADState.isProcessing) {
+                await processStreamingResult(finalMergedText, 'final-semantic');
+            }
+        }, timeout);
+    });
+
+    // partialイベント - ログ出力のみ（サーバー側VADに任せる）
+    streamingSTTClient.on('partial', (text) => {
+        if (!text || !text.trim()) return;
+
+        const now = Date.now();
+
+        // 発話開始時刻を記録
+        if (!streamingVADState.utteranceStartTime) {
+            streamingVADState.utteranceStartTime = now;
+            console.log(`[StreamingVAD] Utterance started`);
+        }
+
+        // テキスト更新を検知（ログのみ）
+        if (text !== streamingVADState.lastPartialText) {
+            streamingVADState.accumulatedText = text;
+            streamingVADState.lastPartialText = text;
+            streamingVADState.lastPartialTime = now;
+
+            console.log(`[StreamingVAD] Partial: "${text}"`);
+            // サーバー側のSilero VADが発話終了を検出してfinalを返す
+        }
+    });
+
+    streamingSTTClient.connect();
+    console.log('[StreamingSTT] Client initialized with text-stability VAD');
+}
+
+/**
+ * ストリーミング結果を処理してClaudeに送信
+ */
+async function processStreamingResult(text, source) {
+    if (streamingVADState.isProcessing) {
+        console.log(`[StreamingSTT] Already processing, skipping (source: ${source})`);
+        return;
+    }
+
+    streamingVADState.isProcessing = true;
+
+    try {
+        console.log(`[StreamingSTT] Processing result (source: ${source}): "${text}"`);
+
+        // ノイズフィルタ
+        const noisePatterns = ['音楽', '笑', '拍手', 'BGM', 'ご視聴', 'ありがとうございました', 'チャンネル登録'];
+        const strippedText = text.trim().replace(/[\(\)\[\]（）「」『』]/g, '');
+
+        if (noisePatterns.some(p => strippedText.includes(p))) {
+            console.log(`[StreamingSTT] Filtered noise: "${text}"`);
+            return;
+        }
+
+        if (strippedText.length <= 1) {
+            console.log(`[StreamingSTT] Filtered short text: "${text}"`);
+            return;
+        }
+
+        // Claudeに送信
+        const userId = process.env.CC_DISCORD_USER_ID || 'unknown';
+        await sendToClaude(text, userId);
+
+    } finally {
+        // 状態をリセット
+        resetStreamingVADState();
+    }
+}
+
+/**
+ * ストリーミングVAD状態をリセット
+ */
+function resetStreamingVADState() {
+    if (streamingVADState.stabilityTimer) {
+        clearTimeout(streamingVADState.stabilityTimer);
+    }
+    streamingVADState = {
+        lastPartialText: '',
+        accumulatedText: '',
+        lastPartialTime: 0,
+        stabilityTimer: null,
+        utteranceStartTime: null,
+        isProcessing: false
+    };
+
+    // STTサーバーにもリセットを通知
+    if (streamingSTTClient && streamingSTTClient.isConnected()) {
+        streamingSTTClient.reset();
+    }
+    console.log('[StreamingVAD] State reset');
+}
+
+/**
+ * PCM音声データをWAVに変換してSTT処理
+ * prism-mediaでデコード済みのPCMデータ（48kHz stereo s16le）
+ */
+async function processAudioToText(pcmChunks) {
+    const timestamp = Date.now();
+    const tempPcm = `/tmp/voice-${timestamp}.pcm`;
+    const tempWav = `/tmp/voice-${timestamp}.wav`;
+
+    try {
+        // PCMチャンクを結合
+        const pcmData = Buffer.concat(pcmChunks);
+        console.log(`[STT] PCM data: ${pcmData.length} bytes from ${pcmChunks.length} chunks`);
+
+        // 最低限の音声データがあるか確認（0.5秒以上 = 48000 * 2 * 2 * 0.5 = 96000バイト）
+        if (pcmData.length < 48000) {
+            console.log('[STT] Audio too short, skipping');
+            return null;
+        }
+
+        fs.writeFileSync(tempPcm, pcmData);
+
+        // ffmpegでWAVに変換（Whisper用に16kHz monoに変換）
+        const ffmpegCmd = `ffmpeg -y -f s16le -ar 48000 -ac 2 -i ${tempPcm} -ar 16000 -ac 1 ${tempWav} 2>&1`;
+
+        try {
+            execSync(ffmpegCmd);
+        } catch (ffmpegError) {
+            console.error('[STT] ffmpeg error:', ffmpegError.message);
+            return null;
+        }
+
+        // WAVファイルサイズ確認
+        if (!fs.existsSync(tempWav)) {
+            console.log('[STT] WAV not created');
+            return null;
+        }
+
+        const wavStats = fs.statSync(tempWav);
+        console.log(`[STT] WAV file size: ${wavStats.size} bytes`);
+
+        // STT実行
+        const text = await speechToText(tempWav);
+        return text;
+    } catch (error) {
+        console.error('[STT] Conversion error:', error.message);
+        return null;
+    } finally {
+        // 一時ファイル削除（PCMのみ、WAVはデバッグ用に保存）
+        if (fs.existsSync(tempPcm)) fs.unlinkSync(tempPcm);
+        // WAVは /tmp/voice-debug/ に保存
+        const debugDir = '/tmp/voice-debug';
+        if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+        if (fs.existsSync(tempWav)) {
+            const debugPath = `${debugDir}/voice-${timestamp}.wav`;
+            fs.renameSync(tempWav, debugPath);
+            console.log(`[STT] Debug WAV saved: ${debugPath}`);
+        }
+    }
+}
+
+/**
+ * 認識テキストをFlask APIに直接送信（バッファリング対応版）
+ * Flask /voice-input は内部でDiscord🎤投稿もしてくれる
+ *
+ * 分割発話を1つにまとめるため、1秒間バッファリングしてから送信
+ */
+
+// 送信バッファリング用の状態
+let sendBuffer = {
+    texts: [],           // バッファされたテキスト
+    timer: null,         // 送信タイマー
+    userId: null         // 最後のユーザーID
+};
+const SEND_BUFFER_TIMEOUT = 1500;  // 1.5秒待機してから送信（高速化）
+
+async function sendToClaude(text, userId) {
+    console.log(`[Claude] Buffering text: "${text}" from user ${userId}`);
+
+    // バッファにテキストを追加
+    sendBuffer.texts.push(text);
+    sendBuffer.userId = userId;
+
+    // 既存のタイマーをクリア（新しい発話が来たのでリセット）
+    if (sendBuffer.timer) {
+        clearTimeout(sendBuffer.timer);
+    }
+
+    // 1秒後に送信
+    sendBuffer.timer = setTimeout(async () => {
+        await flushSendBuffer();
+    }, SEND_BUFFER_TIMEOUT);
+}
+
+/**
+ * バッファされたテキストを結合してClaudeに送信
+ */
+async function flushSendBuffer() {
+    if (sendBuffer.texts.length === 0) return;
+
+    // テキストを結合
+    const combinedText = sendBuffer.texts.join('');
+    const userId = sendBuffer.userId;
+
+    // バッファをクリア
+    sendBuffer.texts = [];
+    sendBuffer.timer = null;
+    sendBuffer.userId = null;
+
+    console.log(`[Claude] Processing: "${combinedText}" from user ${userId}`);
+
+    // ストリーミングClaude有効時
+    if (USE_STREAMING_CLAUDE) {
+        console.log('[Claude] Using streaming mode');
+
+        // Discord テキストチャンネルに認識結果を投稿（仕様: FR-001）
+        try {
+            const channel = await client.channels.fetch(config.TEXT_CHANNEL_ID);
+            if (channel) {
+                await channel.send(`🎤 ${combinedText}`);
+                console.log(`[Discord] Posted recognition: 🎤 ${combinedText.substring(0, 50)}...`);
+            }
+        } catch (discordError) {
+            console.error('[Discord] Failed to post recognition:', discordError.message);
+        }
+
+        // Claude応答を蓄積してDiscord投稿用
+        let fullResponseText = '';
+
+        await streamClaude(
+            combinedText,
+            // 文が完成するたびに呼ばれる
+            (sentence) => {
+                console.log(`[Claude Stream] Speaking: "${sentence}"`);
+                speak(sentence);
+                fullResponseText += sentence;
+            },
+            // 全体完了時 - Discord テキストチャンネルに応答を投稿
+            async (fullResponse) => {
+                console.log(`[Claude Stream] Full response complete (${fullResponse.length} chars)`);
+                // Discordに応答を投稿
+                try {
+                    const channel = await client.channels.fetch(config.TEXT_CHANNEL_ID);
+                    if (channel) {
+                        await channel.send(fullResponse);
+                        console.log(`[Discord] Posted response: 🤖 ${fullResponse.substring(0, 50)}...`);
+                    }
+                } catch (discordError) {
+                    console.error('[Discord] Failed to post response:', discordError.message);
+                }
+            },
+            // エラー時
+            (error) => {
+                console.error('[Claude Stream] Error:', error.message);
+                speak('すみません、エラーが発生しました。');
+            }
+        );
+        return;
+    }
+
+    // 従来モード: Flask API経由
+    console.log(`[Claude] Sending to Flask API: "${combinedText}"`);
+
+    try {
+        const response = await fetch(`${config.FLASK_SERVER_URL}/voice-input`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: combinedText, userId })
+        });
+
+        if (!response.ok) {
+            console.error('[Claude] Flask API error:', response.status);
+        } else {
+            const result = await response.json();
+            console.log('[Claude] Sent to Flask API successfully:', result.status);
+        }
+    } catch (error) {
+        console.error('[Claude] Send error:', error.message);
+    }
+}
+
+/**
+ * テキストを文単位で分割
+ * 句点（。）、感嘆符（！）、疑問符（？）で分割
+ */
+function splitIntoSentences(text) {
+    // 句読点で分割（句読点は各文の末尾に残す）
+    const sentences = text.split(/(?<=[。！？!?])/);
+    // 空文字を除去し、トリム
+    return sentences.map(s => s.trim()).filter(s => s.length > 0);
+}
+
+/**
+ * テキストを音声キューに追加（先読みTTS対応）
+ */
+function speak(text) {
+    if (!text || !connection) return false;
+
+    // 文で分割してテキストキューに追加
+    const sentences = splitIntoSentences(text);
+    for (const sentence of sentences) {
+        textQueue.push(sentence);
+        console.log(`[TTS] Queued: ${sentence.substring(0, 50)}...`);
+    }
+
+    // 先読み開始
+    if (!isPrefetching) {
+        prefetchAudio();
+    }
+    return true;
+}
+
+// ===== Express API Server =====
+const app = express();
+app.use(express.json());
+
+// ヘルスチェック
+app.get('/health', async (req, res) => {
+    const voicevoxOk = await healthCheck();
+    res.json({
+        status: 'ok',
+        voicevox: voicevoxOk,
+        discord: client.isReady(),
+        voiceConnected: connection !== null,
+        whisperActiveProcesses: getWhisperActiveCount()
+    });
+});
+
+// デバッグ: 利用可能なチャンネル一覧
+app.get('/channels', async (req, res) => {
+    const channels = [];
+    client.guilds.cache.forEach(guild => {
+        guild.channels.cache.forEach(channel => {
+            if (channel.isVoiceBased()) {
+                channels.push({
+                    id: channel.id,
+                    name: channel.name,
+                    guild: guild.name,
+                    type: channel.type
+                });
+            }
+        });
+    });
+    res.json(channels);
+});
+
+// TTS API
+app.post('/speak', (req, res) => {
+    const { text } = req.body;
+    if (!text) {
+        return res.status(400).json({ error: 'text is required' });
+    }
+
+    const success = speak(text);
+    if (success) {
+        res.json({ status: 'queued', text: text.substring(0, 50) });
+    } else {
+        res.status(503).json({ error: 'Voice not connected' });
+    }
+});
+
+// 音声チャンネル参加
+app.post('/join', async (req, res) => {
+    const channelId = req.body.channelId || config.VOICE_CHANNEL_ID;
+    try {
+        await joinChannel(channelId);
+        res.json({ status: 'joined', channelId });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 音声チャンネル退出
+app.post('/leave', (req, res) => {
+    if (connection) {
+        connection.destroy();
+        connection = null;
+        res.json({ status: 'left' });
+    } else {
+        res.status(400).json({ error: 'Not connected' });
+    }
+});
+
+// リスニング開始
+app.post('/listen/start', (req, res) => {
+    const { userId } = req.body;
+    isListening = true;
+    listeningUserId = userId || null;
+    console.log(`[STT] Listening started${userId ? ` for user ${userId}` : ' for all users'}`);
+    res.json({ status: 'listening', userId: listeningUserId });
+});
+
+// リスニング停止
+app.post('/listen/stop', (req, res) => {
+    isListening = false;
+    listeningUserId = null;
+    console.log('[STT] Listening stopped');
+    res.json({ status: 'stopped' });
+});
+
+// リスニング状態確認
+app.get('/listen/status', (req, res) => {
+    res.json({
+        isListening,
+        listeningUserId
+    });
+});
+
+// ===== Startup =====
+client.once('ready', async () => {
+    console.log(`[Discord] Logged in as ${client.user.tag}`);
+
+    // VOICEVOXヘルスチェック
+    const voicevoxOk = await healthCheck();
+    if (!voicevoxOk) {
+        console.error('[VOICEVOX] Server not available!');
+    } else {
+        console.log('[VOICEVOX] Server OK');
+    }
+
+    // ストリーミングSTT初期化
+    if (USE_STREAMING_STT) {
+        initStreamingSTT();
+        console.log('[STT] Streaming mode enabled');
+    } else {
+        console.log('[STT] Batch mode (default)');
+    }
+
+    // 自動で音声チャンネルに参加
+    try {
+        await joinChannel(config.VOICE_CHANNEL_ID);
+        // 起動時に自動でリスニング開始
+        isListening = true;
+        console.log('[STT] Auto-listening enabled on startup');
+    } catch (error) {
+        console.error('[Voice] Failed to join channel:', error.message);
+    }
+
+    // Express server start
+    app.listen(config.VOICE_SERVER_PORT, () => {
+        console.log(`[API] Server running on port ${config.VOICE_SERVER_PORT}`);
+        console.log(`[API] POST /speak {"text": "..."} to speak`);
+    });
+});
+
+// Graceful shutdown
+function cleanup() {
+    console.log('\n[Shutdown] Cleaning up...');
+    // whisperプロセスを全て終了
+    killAllWhisperProcesses();
+    if (connection) connection.destroy();
+    client.destroy();
+}
+
+process.on('SIGINT', () => {
+    cleanup();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    cleanup();
+    process.exit(0);
+});
+
+// 未処理例外でもクリーンアップ（DAVE復号エラーは無視して継続）
+process.on('uncaughtException', (error) => {
+    // DAVE Protocol復号エラーは無視（セッション再初期化で回復する）
+    if (error.message && error.message.includes('DecryptionFailed')) {
+        console.warn('[DAVE] Decryption failed, ignoring and continuing...');
+        return;
+    }
+    console.error('[Fatal] Uncaught exception:', error);
+    cleanup();
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Fatal] Unhandled rejection:', reason);
+});
+
+// Start
+console.log('[Voice Bot] Starting...');
+client.login(config.DISCORD_TOKEN);

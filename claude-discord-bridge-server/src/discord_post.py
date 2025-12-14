@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
 Discord Post実装
-メッセージをDiscordに投稿する
+メッセージをDiscordに投稿する + TTS音声再生
 """
 
 import os
 import sys
 import json
 import requests
+import re
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -16,39 +17,76 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import SettingsManager
 from src.session_manager import SessionManager
 
+def send_to_tts(text: str):
+    """Send text to Voice Bot TTS API for audio playback"""
+    # TTS用にテキストをクリーンアップ
+    clean_text = re.sub(r'<@\d+>\s*', '', text).strip()
+    clean_text = re.sub(r'```[\s\S]*?```', '', clean_text)  # コードブロック除去
+    clean_text = re.sub(r'`[^`]+`', '', clean_text)  # インラインコード除去
+    clean_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', clean_text)  # 太字マークダウン除去
+    clean_text = re.sub(r'\n+', '。', clean_text)  # 改行を句点に
+    clean_text = clean_text.strip()
+
+    if not clean_text or len(clean_text) < 2:
+        return
+
+    # 音声入力の文字起こし（🎤で始まる）はTTS不要
+    if clean_text.startswith('🎤'):
+        return
+
+    # 長すぎる場合は切り詰め（TTS用）
+    if len(clean_text) > 200:
+        clean_text = clean_text[:200] + "...以下省略"
+
+    try:
+        response = requests.post(
+            "http://localhost:3001/speak",
+            json={"text": clean_text},
+            timeout=5
+        )
+        if response.status_code == 200:
+            print(f"[TTS] Queued: {clean_text[:50]}...")
+        else:
+            print(f"[TTS] Failed: {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        print("[TTS] Voice Bot not running")
+    except Exception as e:
+        print(f"[TTS] Error: {e}")
+
 def post_to_discord(channel_id: str, message: str):
     """Post a message to Discord channel"""
     settings = SettingsManager()
-    
+
     # Get bot token
     token = settings.get_token()
     if not token:
         print("Error: Discord bot token not configured")
         sys.exit(1)
-    
+
     # Discord API endpoint
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    
+
     # Headers
     headers = {
         "Authorization": f"Bot {token}",
         "Content-Type": "application/json"
     }
-    
+
     # メンションパターンを完全除去（<@数字>）
-    import re
     clean_message = re.sub(r'<@\d+>\s*', '', message).strip()
-    
+
     # Payload
     payload = {
         "content": clean_message
     }
-    
+
     try:
         # Send request
         response = requests.post(url, headers=headers, json=payload)
-        
+
         if response.status_code == 200:
+            # TTS送信（Discord送信成功時のみ）
+            send_to_tts(clean_message)
             return True
         else:
             print(f"Error: Discord API returned status {response.status_code}")
@@ -61,7 +99,7 @@ def post_to_discord(channel_id: str, message: str):
             else:
                 print(f"Response: {response.text}")
             return False
-            
+
     except requests.exceptions.ConnectionError:
         print("Error: Failed to connect to Discord API")
         return False
