@@ -17,15 +17,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.settings import SettingsManager
 from src.session_manager import SessionManager
 
-def send_to_tts(text: str):
+def send_to_tts(text: str, session_num: int = 1):
     """Send text to Voice Bot TTS API for audio playback (non-blocking)"""
     import threading
+
+    # セッション番号に応じたポートを選択（Session 1=3001, Session 2=3002, ...）
+    tts_port = 3000 + session_num
 
     def _send_tts_async(clean_text: str):
         """Background thread for TTS request"""
         try:
             response = requests.post(
-                "http://localhost:3001/speak",
+                f"http://localhost:{tts_port}/speak",
                 json={"text": clean_text},
                 timeout=5
             )
@@ -57,14 +60,35 @@ def send_to_tts(text: str):
     if clean_text.startswith('🔧'):
         return
 
-    # 長すぎる場合は切り詰め（TTS用）
+    # 長すぎる場合は切り詰め（TTS用）- 省略メッセージは付けない
     if len(clean_text) > 200:
-        clean_text = clean_text[:200] + "...以下省略"
+        clean_text = clean_text[:200]
 
     # TTS送信（同期で実行 - dpコマンドが終了する前に完了させる）
     _send_tts_async(clean_text)
 
-def post_to_discord(channel_id: str, message: str):
+def post_to_discord_raw(channel_id: str, message: str):
+    """Post a message to Discord channel without TTS (for logging only)"""
+    settings = SettingsManager()
+
+    token = settings.get_token()
+    if not token:
+        return False
+
+    url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+    headers = {
+        "Authorization": f"Bot {token}",
+        "Content-Type": "application/json"
+    }
+    payload = {"content": message}
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        return response.status_code == 200
+    except:
+        return False
+
+def post_to_discord(channel_id: str, message: str, session_num: int = 1):
     """Post a message to Discord channel"""
     settings = SettingsManager()
 
@@ -96,8 +120,8 @@ def post_to_discord(channel_id: str, message: str):
         response = requests.post(url, headers=headers, json=payload)
 
         if response.status_code == 200:
-            # TTS送信（Discord送信成功時のみ）
-            send_to_tts(clean_message)
+            # TTS送信（Discord送信成功時のみ）- セッション番号でポート切り替え
+            send_to_tts(clean_message, session_num)
             return True
         else:
             print(f"Error: Discord API returned status {response.status_code}")
@@ -122,11 +146,25 @@ def main():
     """Main function for command line usage (multi-session support)"""
     settings = SettingsManager()
     session_manager = SessionManager()
-    
+
+    # Check for --notify flag
+    notify_mode = '--notify' in sys.argv
+    if notify_mode:
+        sys.argv.remove('--notify')
+
+    # Check for --from flag (source session)
+    from_session = 1  # default
+    if '--from' in sys.argv:
+        from_idx = sys.argv.index('--from')
+        if from_idx + 1 < len(sys.argv):
+            from_session = int(sys.argv[from_idx + 1])
+            sys.argv.pop(from_idx + 1)
+            sys.argv.pop(from_idx)
+
     # Check if stdin has data
     if not sys.stdin.isatty():
         message = sys.stdin.read().strip()
-        
+
         # Check if channel ID is provided as argument
         if len(sys.argv) > 1:
             channel_arg = sys.argv[1]
@@ -135,15 +173,17 @@ def main():
             channel_arg = str(session_manager.get_default_session())
         
         # Determine if it's a session number or channel ID
+        session_num = 1  # デフォルト
         if channel_arg.isdigit() and len(channel_arg) < 5:
             # It's a session number - use SessionManager with validation
             session_id = int(channel_arg)
-            
+            session_num = session_id  # TTSポート切り替え用に保持
+
             # Validate session number range (1-9999)
             if session_id < 1 or session_id > 9999:
                 print(f"Error: Invalid session number {session_id} (must be 1-9999)")
                 sys.exit(1)
-            
+
             # Get channel ID from SessionManager
             channel_id = session_manager.get_channel_by_session(session_id)
             if not channel_id:
@@ -163,15 +203,37 @@ def main():
                 print("Channel ID should be a long number (e.g., 1234567890123456)")
                 sys.exit(1)
             channel_id = channel_arg
-        
-        # Post message
-        if post_to_discord(channel_id, message):
-            # Success - no output
-            pass
+
+        # If notify mode, send to both channels with [A→B] format
+        if notify_mode:
+            # セッション番号をアルファベットに変換 (1=A, 2=B, 3=C, ...)
+            from_letter = chr(ord('A') + from_session - 1)
+            to_letter = chr(ord('A') + session_num - 1)
+
+            # Format: [A→B] メッセージ session=X (シンプル形式)
+            formatted_msg = f"[{from_letter}→{to_letter}] {message}"
+            notify_trigger = f"session={from_session}"
+
+            # 1. 送信元チャンネルに履歴として投稿（TTSなし）
+            from_channel_id = session_manager.get_channel_by_session(from_session)
+            if from_channel_id:
+                post_to_discord_raw(from_channel_id, formatted_msg)
+
+            # 2. 送信先チャンネルに投稿（Claudeが反応する）
+            full_msg = f"{formatted_msg} {notify_trigger}"
+            if post_to_discord(channel_id, full_msg, session_num):
+                pass
+            else:
+                sys.exit(1)
         else:
-            sys.exit(1)
+            # Post message with session number for TTS routing
+            if post_to_discord(channel_id, message, session_num):
+                # Success - no output
+                pass
+            else:
+                sys.exit(1)
     else:
-        print("Usage: echo 'message' | discord_post.py [session_number or channel_id]")
+        print("Usage: echo 'message' | discord_post.py [session_number or channel_id] [--notify]")
         sys.exit(1)
 
 if __name__ == "__main__":

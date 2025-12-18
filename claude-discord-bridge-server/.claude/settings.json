@@ -1,0 +1,16 @@
+{
+  "model": "claude-opus-4-5-20251101",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Write|Edit|Grep|Glob|WebSearch|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/rema/project/002--claude-test/claude-discord-bridge-server/bin/hook-notify.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

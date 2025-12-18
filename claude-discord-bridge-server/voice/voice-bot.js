@@ -747,7 +747,7 @@ async function flushSendBuffer() {
         const response = await fetch(`${config.FLASK_SERVER_URL}/voice-input`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: combinedText, userId })
+            body: JSON.stringify({ text: combinedText, userId, session: config.SESSION_NUM })
         });
 
         const flaskEndTime = Date.now();
@@ -893,7 +893,7 @@ app.get('/listen/status', (req, res) => {
 
 // ===== Startup =====
 client.once('ready', async () => {
-    console.log(`[Discord] Logged in as ${client.user.tag}`);
+    console.log(`[Discord] Logged in as ${client.user.tag} (Instance ${config.INSTANCE})`);
 
     // VOICEVOXヘルスチェック
     const voicevoxOk = await healthCheck();
@@ -964,5 +964,9 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Start
-console.log('[Voice Bot] Starting...');
+console.log(`[Voice Bot ${config.INSTANCE}] Starting...`);
+console.log(`[Voice Bot ${config.INSTANCE}] Voice Channel: ${config.VOICE_CHANNEL_ID}`);
+console.log(`[Voice Bot ${config.INSTANCE}] Text Channel: ${config.TEXT_CHANNEL_ID}`);
+console.log(`[Voice Bot ${config.INSTANCE}] API Port: ${config.VOICE_SERVER_PORT}`);
+console.log(`[Voice Bot ${config.INSTANCE}] Session: ${config.SESSION_NUM}`);
 client.login(config.DISCORD_TOKEN);

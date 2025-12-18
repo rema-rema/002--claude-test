@@ -419,6 +419,7 @@ class FlaskBridgeApp:
 
             text = data.get('text', '')
             user_id = data.get('userId', '')
+            session_num = data.get('session', 1)  # Voice Botから送信されるセッション番号
 
             if not text:
                 return jsonify({'error': 'No text provided'}), 400
@@ -429,9 +430,6 @@ class FlaskBridgeApp:
                 logger.info(f"Filtered noise word: {text}")
                 return jsonify({'status': 'filtered', 'reason': 'noise_word'})
 
-            # セッション1に転送（デフォルト）
-            session_num = 1
-
             # 音声入力であることを示すプレフィックス追加
             voice_message = f"Discordからの通知: {text} session={session_num}"
 
@@ -441,8 +439,13 @@ class FlaskBridgeApp:
             t_before_discord = time_module.time()
             try:
                 sessions = self.settings.list_sessions()
-                if sessions:
-                    channel_id = sessions[0][1]  # session 1のチャンネルID
+                # セッション番号に対応するチャンネルを取得
+                channel_id = None
+                for num, ch_id in sessions:
+                    if num == session_num:
+                        channel_id = ch_id
+                        break
+                if channel_id:
                     post_to_discord(channel_id, f"🎤 {text}")
             except Exception as e:
                 logger.warning(f"Failed to post voice text to Discord: {e}")

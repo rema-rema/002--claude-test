@@ -493,3 +493,79 @@ dp 2 "<@ユーザー番号> {応答}\n{応答}" (Session=2の場合)
 - **Conversation Context**: ClaudeService maintains rolling 10-message history
 - **Error Recovery**: Bot continues running even if individual message processing fails
 - **Deployment**: Dual deployment (Vercel for API, direct Node.js for bot)
+
+## 共有フォルダ (SMB)
+
+### 接続情報
+- 環境変数ファイル: `/home/rema/project/002--claude-test/.env`
+  - `SMB_HOST` - ホストIP
+  - `SMB_SHARE` - 共有名
+  - `SMB_USERNAME` - ユーザー名
+  - `SMB_PASSWORD` - パスワード
+
+### アクセス方法
+```bash
+# 環境変数読み込み
+source /home/rema/project/002--claude-test/.env
+
+# ファイル一覧
+smbclient //$SMB_HOST/$SMB_SHARE -U $SMB_USERNAME%$SMB_PASSWORD -c "ls"
+
+# ファイル取得
+smbclient //$SMB_HOST/$SMB_SHARE -U $SMB_USERNAME%$SMB_PASSWORD -c "get ファイル名"
+
+# ファイル送信
+smbclient //$SMB_HOST/$SMB_SHARE -U $SMB_USERNAME%$SMB_PASSWORD -c "put ローカルファイル"
+
+# ディレクトリ移動して操作
+smbclient //$SMB_HOST/$SMB_SHARE -U $SMB_USERNAME%$SMB_PASSWORD -c "cd project; ls"
+```
+
+### フォルダ構成
+- `project/` - プロジェクト関連
+- `job/` - 仕事関連
+- `private/` - プライベート
+
+## 検証環境 (Staging)
+
+### 接続情報
+- **ホスト名**: gpd-ubuntu
+- **IP**: 100.93.241.39（Tailscale経由）
+- **ユーザー**: rema
+- **認証方式**: 公開鍵認証（パスワード認証も有効）
+
+環境変数ファイル: `/home/rema/project/002--claude-test/.env`
+  - `STAGING_IP` - 検証サーバーIP（Tailscale）
+  - `STAGING_ID` - SSHユーザー名
+
+### SSH接続方法
+```bash
+# 環境変数読み込み
+source /home/rema/project/002--claude-test/.env
+
+# SSH接続（公開鍵認証）
+ssh $STAGING_ID@$STAGING_IP
+
+# リモートコマンド実行
+ssh $STAGING_ID@$STAGING_IP "コマンド"
+
+# ファイル転送（ローカル→リモート）
+scp ローカルファイル $STAGING_ID@$STAGING_IP:リモートパス
+
+# ファイル転送（リモート→ローカル）
+scp $STAGING_ID@$STAGING_IP:リモートファイル ローカルパス
+```
+
+### 用途
+- ポータルサイトのデプロイ先
+- Giteaのホスト先
+- 本番環境兼検証環境
+
+### 秘密鍵の場所
+- `/home/rema/.ssh/id_ed25519` - 秘密鍵
+- `/home/rema/.ssh/id_ed25519.pub` - 公開鍵
+
+**注意**: この秘密鍵はrema-work WSL環境の全セッションで共有される。各セッションから直接SSH接続可能。
+
+### 接続確認済み環境
+- rema-work（WSL）→ gpd-ubuntu: 公開鍵認証で接続可能（2025-12-18確認）

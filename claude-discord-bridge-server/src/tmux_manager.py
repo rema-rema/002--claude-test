@@ -234,12 +234,17 @@ class TmuxManager:
             # オプション設定
             claude_options = options if options is not None else self.DEFAULT_CLAUDE_OPTIONS
             
-            # Claude Code コマンド構築
-            claude_cmd = f"cd \"{work_dir}\" && claude {claude_options}".strip()
-            
+            # Claude Code コマンド構築（環境変数でセッション番号を設定）
+            # CC_SESSION_ID: dpコマンドで送信元セッションを特定するために使用
+            claude_cmd = f"export CLAUDE_SESSION_NUM={session_id} && export CC_SESSION_ID={session_id} && cd \"{work_dir}\" && claude {claude_options}".strip()
+
+            # セッションマーカーファイル作成（dpコマンドでの判定用）
+            marker_file = f"/tmp/claude-session-{session_id}.current"
+            marker_cmd = f"echo {session_id} > {marker_file}"
+
             # tmuxセッション作成
             subprocess.run(
-                ["tmux", "new-session", "-d", "-s", session_name, claude_cmd],
+                ["tmux", "new-session", "-d", "-s", session_name, f"{marker_cmd} && {claude_cmd}"],
                 check=True
             )
             

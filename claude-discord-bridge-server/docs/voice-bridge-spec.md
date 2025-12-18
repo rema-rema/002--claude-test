@@ -3,9 +3,11 @@
 ## 概要
 
 Discord音声チャンネル経由でClaude Codeと音声対話を行うシステム。
+**マルチセッション対応**: 複数のDiscord Botを使用し、各ボイスチャンネルを独立したClaude Codeセッションに紐づけ可能。
 
 ## アーキテクチャ
 
+### シングルセッション構成
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────────┐
 │  Discord    │────▶│  Voice Bot   │────▶│  Streaming STT      │
@@ -25,6 +27,34 @@ Discord音声チャンネル経由でClaude Codeと音声対話を行うシス�
                     │  (TTS)      │
                     └─────────────┘
 ```
+
+### マルチセッション構成
+```
+┌──────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
+│  Voice Ch A      │────▶│  Voice Bot A     │────▶│                     │
+│  (rema-work-1)   │◀────│  Port: 3001      │     │  Streaming STT      │
+└──────────────────┘     │  Session: 1      │     │  Server (共有)      │
+                         └────────┬─────────┘     │  Port: 8765         │
+                                  │               └─────────────────────┘
+┌──────────────────┐     ┌────────▼─────────┐
+│  Voice Ch B      │────▶│  Voice Bot B     │
+│  (rema-work-2)   │◀────│  Port: 3002      │
+└──────────────────┘     │  Session: 2      │
+                         └────────┬─────────┘
+                                  │
+                         ┌────────▼─────────┐     ┌─────────────────────┐
+                         │  Flask API       │────▶│  Claude Code        │
+                         │  Port: 5001      │     │  Session 1 (tmux)   │
+                         │  (ルーティング)  │────▶│  Session 2 (tmux)   │
+                         └──────────────────┘     └─────────────────────┘
+```
+
+**マルチセッションの特徴:**
+- 各Voice Botは独立したDiscord Botアカウント
+- 各Voice Botは専用ポート（3001, 3002, ...）でAPIを提供
+- STTサーバーは全Voice Botで共有
+- Flask APIがセッション番号でルーティング
+- TTS応答もセッション番号に応じたポートに送信
 
 ## コンポーネント
 
@@ -103,29 +133,47 @@ Discordへのメッセージ送信とTTS連携。
 ## 環境変数
 
 ```bash
-# Discord設定
-CC_DISCORD_TOKEN=       # Discord Botトークン
-CC_DISCORD_CHANNEL_ID=  # テキストチャンネルID
-CC_DISCORD_USER_ID=     # 認証ユーザーID
-VOICE_CHANNEL_ID=       # 音声チャンネルID
+# === Voice Bot A (Session 1) ===
+CC_DISCORD_TOKEN=           # Discord Botトークン（Bot A）
+CC_DISCORD_CHANNEL_ID_002=  # テキストチャンネルA ID
+VOICE_CHANNEL_ID=           # ボイスチャンネルA ID
+
+# === Voice Bot B (Session 2) ===
+VOICE_BOT_B_TOKEN=          # Discord Botトークン（Bot B）
+VOICE_BOT_B_CHANNEL_ID=     # ボイスチャンネルB ID
+CC_DISCORD_CHANNEL_ID_002_B= # テキストチャンネルB ID
+
+# === 共通設定 ===
+CC_DISCORD_USER_ID=         # 認証ユーザーID
 
 # STT/TTS設定
-USE_STREAMING_STT=true  # ストリーミングSTT有効化
-USE_STREAMING_CLAUDE=true # Claudeストリーミング有効化
+USE_STREAMING_STT=true      # ストリーミングSTT有効化
+USE_STREAMING_CLAUDE=true   # Claudeストリーミング有効化
 
 # サーバー設定
-VOICE_SERVER_PORT=3001  # Voice Bot APIポート
 FLASK_SERVER_URL=http://localhost:5001
 ```
 
+### インスタンス別ポート
+
+| インスタンス | 環境変数 | Voice Bot Port | Session番号 |
+|-------------|---------|----------------|-------------|
+| Bot A | `VOICE_BOT_INSTANCE=A` | 3001 | 1 |
+| Bot B | `VOICE_BOT_INSTANCE=B` | 3002 | 2 |
+| Bot C | `VOICE_BOT_INSTANCE=C` | 3003 | 3 |
+| Bot D | `VOICE_BOT_INSTANCE=D` | 3004 | 4 |
+
 ## ポート一覧
 
-| サービス | ポート | プロトコル |
-|---------|--------|-----------|
-| Voice Bot API | 3001 | HTTP |
-| Flask API | 5001 | HTTP |
-| STT Server | 8765 | WebSocket |
-| VOICEVOX | 50021 | HTTP |
+| サービス | ポート | プロトコル | 備考 |
+|---------|--------|-----------|------|
+| Voice Bot A | 3001 | HTTP | Session 1用 |
+| Voice Bot B | 3002 | HTTP | Session 2用 |
+| Voice Bot C | 3003 | HTTP | Session 3用 |
+| Voice Bot D | 3004 | HTTP | Session 4用 |
+| Flask API | 5001 | HTTP | ルーティング |
+| STT Server | 8765 | WebSocket | 共有 |
+| VOICEVOX | 50021 | HTTP | TTS（共有） |
 
 ## レイテンシ目標
 
@@ -171,6 +219,7 @@ src/
 
 ## 更新履歴
 
+- 2025-12-15: マルチセッション音声対応（Bot A/B独立、セッション別TTS/テキストルーティング）
 - 2024-12-14: TTS非同期化、タイミング計測追加
 - 2024-12-13: Silero VAD統合、セマンティック検出実装
 - 2024-12-12: ストリーミングSTT実装

@@ -85,6 +85,12 @@ class MessageProcessor:
         if content.startswith('/'):
             # スラッシュコマンド形式（直接Claude Codeコマンド実行）
             return f"{content}{attachment_str} session={session_num}"
+        elif content.startswith('[') and '→' in content[:10]:
+            # セッション間通信形式 [A→B] - そのまま転送（二重ラップ防止）
+            return content
+        elif content.startswith('Discordからの通知:'):
+            # 旧形式の通知 - そのまま転送（後方互換性）
+            return content
         else:
             # 通常メッセージ形式（Claude Codeへの通知）
             return f"Discordからの通知: {content}{attachment_str} session={session_num}"
@@ -264,22 +270,32 @@ class ClaudeCLIBot(commands.Bot):
     async def _validate_message(self, message) -> bool:
         """
         メッセージの基本検証
-        
+
         拡張ポイント：
         - スパム検出
         - 権限確認
         - ブラックリストチェック
         """
-        # Bot自身のメッセージは無視
-        # 🎤プレフィックスもFlask直接転送に変更したため、discord-bridge経由は不要
+        # Bot自身のメッセージの処理
         if message.author == self.user:
+            # [A→B]形式はセッション間通信として処理する
+            if message.content.startswith('[') and '→' in message.content[:10]:
+                logger.info(f'セッション間通信メッセージ検出: {message.content[:50]}...')
+                return True
+
+            # 「Discordからの通知:」形式も（後方互換性）
+            if message.content.startswith('Discordからの通知:'):
+                logger.info(f'セッション間通信メッセージ検出（旧形式）: {message.content[:50]}...')
+                return True
+
+            # 🎤プレフィックスはログのみ
             if message.content.startswith('🎤'):
                 logger.info(f'音声入力メッセージ（ログのみ、処理スキップ）: {message.content[:50]}...')
             return False
-        
+
         # Discord標準コマンドの処理
         await self.process_commands(message)
-        
+
         return True
         
     async def _send_loading_feedback(self, channel) -> Optional[discord.Message]:

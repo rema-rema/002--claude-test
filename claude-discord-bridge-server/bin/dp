@@ -1,71 +1,70 @@
 #!/usr/bin/env bash
 #
 # dp - Discord Postコマンド（マルチセッション対応）
-# 使い方:
-#   dp "message"                    # デフォルトセッション（session_1）
-#   dp 2 "message"                  # セッション2
-#   dp 3 "message"                  # セッション3  
-#   dp 4 "message"                  # セッション4
-#   dp 1234567890123456 "message"   # チャンネルID直接指定
 #
-# セッション管理:
-#   ./bin/vai list-sessions         # 設定済みセッション確認
-#   ./bin/vai add-session <ch_id>   # 新セッション追加
+# Usage:
+#   dp "message"                    # デフォルトセッション(1)に送信
+#   dp 2 "message"                  # セッション2に送信
+#   dp --notify 2 "message"         # セッション2に通知形式で送信（相手Claudeが反応する）
+#   dp -n 2 "message"               # 同上（短縮形）
+#
+# 送信元セッションは環境変数 CC_SESSION_ID から自動取得（未設定時は1）
 #
 
-# Get toolkit root directory
 TOOLKIT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Check arguments
-if [ $# -eq 0 ]; then
-    echo "Usage: dp [session_number or channel_id] \"message\""
-    echo "Examples:"
-    echo "  dp \"Hello World\"       # Send to default session"
-    echo "  dp 2 \"Hello\"           # Send to session 2"
-    echo "  dp 123456789 \"Hi\"      # Send to specific channel ID"
-    echo ""
-    echo "Session management:"
-    echo "  ./bin/vai list-sessions  # View configured sessions"
-    echo "  ./bin/vai add-session    # Add new session"
-    exit 1
+# 送信元セッション（環境変数から取得、デフォルト1）
+FROM_SESSION="${CC_SESSION_ID:-1}"
+
+# オプション解析
+NOTIFY_MODE=""
+SESSION=""
+MESSAGE=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --notify|-n)
+            NOTIFY_MODE="--notify"
+            shift
+            ;;
+        *)
+            if [ -z "$SESSION" ] && [[ "$1" =~ ^[0-9]+$ ]] && [ ${#1} -lt 5 ]; then
+                SESSION="$1"
+            elif [ -z "$MESSAGE" ]; then
+                MESSAGE="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# 引数チェック
+if [ -z "$MESSAGE" ]; then
+    if [ -z "$SESSION" ]; then
+        echo "Usage: dp [--notify|-n] [session] \"message\""
+        echo ""
+        echo "Options:"
+        echo "  --notify, -n  Send as notification (triggers Claude response)"
+        echo ""
+        echo "Examples:"
+        echo "  dp \"hello\"              # Send to default session"
+        echo "  dp 2 \"hello\"            # Send to session 2"
+        echo "  dp --notify 2 \"task\"    # Notify session 2 (Claude responds)"
+        exit 1
+    fi
+    # SESSIONしかない場合、それをMESSAGEとして扱う
+    MESSAGE="$SESSION"
+    SESSION="1"
 fi
 
-# Parse arguments with enhanced validation
-if [ $# -eq 1 ]; then
-    # Only message provided, use default session
-    MESSAGE="$1"
-    if [ -z "$MESSAGE" ]; then
-        echo "Error: Message cannot be empty"
-        exit 1
-    fi
-    echo -e "$MESSAGE" | python3 "$TOOLKIT_ROOT/src/discord_post.py"
-elif [ $# -eq 2 ]; then
-    # Session/channel and message provided
-    CHANNEL="$1"
-    MESSAGE="$2"
-    
-    # Validate inputs
-    if [ -z "$CHANNEL" ]; then
-        echo "Error: Session number or channel ID cannot be empty"
-        exit 1
-    fi
-    if [ -z "$MESSAGE" ]; then
-        echo "Error: Message cannot be empty"
-        exit 1
-    fi
-    
-    # Additional validation for session numbers
-    if [[ "$CHANNEL" =~ ^[0-9]+$ ]] && [ ${#CHANNEL} -lt 5 ]; then
-        if [ "$CHANNEL" -lt 1 ] || [ "$CHANNEL" -gt 9999 ]; then
-            echo "Error: Session number must be between 1 and 9999"
-            exit 1
-        fi
-    fi
-    
-    echo -e "$MESSAGE" | python3 "$TOOLKIT_ROOT/src/discord_post.py" "$CHANNEL"
+# セッション番号のデフォルト
+if [ -z "$SESSION" ]; then
+    SESSION="1"
+fi
+
+# 送信
+if [ -n "$NOTIFY_MODE" ]; then
+    echo -e "$MESSAGE" | python3 "$TOOLKIT_ROOT/src/discord_post.py" "$SESSION" --notify --from "$FROM_SESSION"
 else
-    echo "Error: Too many arguments"
-    echo "Usage: dp [session_number or channel_id] \"message\""
-    echo "Run 'dp' with no arguments for detailed help"
-    exit 1
+    echo -e "$MESSAGE" | python3 "$TOOLKIT_ROOT/src/discord_post.py" "$SESSION"
 fi
